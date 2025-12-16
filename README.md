@@ -126,6 +126,16 @@ docker-compose exec backend python manage.py createsuperuser
 ├── docs/
 │   ├── architecture.md     # Архитектура проекта
 │   └── tech_spec.md        # Техническое задание
+├── tasks
+│   ├── admin.py
+│   ├── apps.py
+│   ├── migrations/
+│   ├── models.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── tests.py
+│   ├── urls.py
+│   └── views.py
 └── users/                  # Django app для пользователей
     ├── admin.py
     ├── apps.py

@@ -23,6 +23,7 @@ class UserSerializer(serializers.ModelSerializer):
             "created_at",
         )
 
+
 class TelegramLoginResponseSerializer(serializers.Serializer):
     user = UserSerializer()
     tokens = serializers.DictField(child=serializers.CharField())

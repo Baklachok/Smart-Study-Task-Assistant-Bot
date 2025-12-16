@@ -4,7 +4,11 @@ from rest_framework.response import Response
 from rest_framework import status, permissions
 
 from .models import User
-from .serializers import TelegramLoginSerializer, UserSerializer, TelegramLoginResponseSerializer
+from .serializers import (
+    TelegramLoginSerializer,
+    UserSerializer,
+    TelegramLoginResponseSerializer,
+)
 from .utils import get_tokens_for_user
 
 
@@ -30,7 +34,7 @@ class TelegramLoginView(APIView):
                 "first_name": data.get("first_name", ""),
                 "language": data.get("language", "en"),
                 "timezone": data.get("timezone", "UTC"),
-            }
+            },
         )
 
         if not created:
@@ -51,9 +55,8 @@ class TelegramLoginView(APIView):
                 "tokens": tokens,
                 "created": created,
             },
-            status=status.HTTP_200_OK
+            status=status.HTTP_200_OK,
         )
-
 
 
 @extend_schema(
@@ -65,10 +68,8 @@ class MeView(APIView):
     """
     GET /api/v1/users/me/
     """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(
-            UserSerializer(request.user).data,
-            status=status.HTTP_200_OK
-        )
+        return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)
