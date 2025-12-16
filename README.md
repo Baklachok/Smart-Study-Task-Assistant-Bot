@@ -126,11 +126,17 @@ docker-compose exec backend python manage.py createsuperuser
 ├── docs/
 │   ├── architecture.md     # Архитектура проекта
 │   └── tech_spec.md        # Техническое задание
-└── README.md
+└── users/                  # Django app для пользователей
+    ├── admin.py
+    ├── apps.py
+    ├── models.py
+    ├── serializers.py
+    ├── urls.py
+    ├── utils.py
+    ├── views.py
+    ├── tests.py
+    └── migrations/
 ```
-
-> Бизнес‑приложения (users, tasks, courses, bot, reminders) добавляются как Django apps внутри проекта.
-
 ---
 
 ## Документация
