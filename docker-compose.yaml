@@ -37,5 +37,19 @@ services:
     ports:
       - "8000:8000"
 
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ss_bot
+    command: sh -c "python -m bot.bot"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - backend
+      - redis
+
 volumes:
   postgres_data:

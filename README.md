@@ -113,39 +113,52 @@ docker-compose exec backend python manage.py createsuperuser
 
 ```text
 .
-├── DjangoProject/          # Django project (settings, urls, wsgi)
+├── bot/                         # Telegram-бот (aiogram)
+│   ├── bot.py                   # Точка входа
+│   ├── config.py                # Настройки бота
+│   ├── handlers/
+│   │   ├── __init__.py
+│   │   └── tasks.py             # Команды /start, /tasks, /add_task, /done
+│   └── utils/
+│       ├── auth.py              # JWT, in-memory token storage
+│       ├── http.py              # HTTP client для API
+│       ├── parsers.py           # Парсинг команд
+│       └── __init__.py
+│
+├── DjangoProject/               # Django project
 │   ├── settings.py
 │   ├── urls.py
 │   ├── asgi.py
 │   └── wsgi.py
-├── manage.py
+│
+├── tasks/                       # Django app: задачи
+│   ├── models.py
+│   ├── serializers.py
+│   ├── views.py
+│   ├── permissions.py
+│   ├── urls.py
+│   └── migrations/
+│
+├── users/                       # Django app: пользователи
+│   ├── models.py
+│   ├── serializers.py
+│   ├── views.py
+│   ├── utils.py
+│   ├── urls.py
+│   └── migrations/
+│
+├── docs/
+│   ├── architecture.md          # Архитектура
+│   └── tech_spec.md             # Техническое задание
+│
 ├── docker-compose.yaml
 ├── Dockerfile
+├── manage.py
+├── mypy.ini
 ├── pyproject.toml
 ├── poetry.lock
-├── docs/
-│   ├── architecture.md     # Архитектура проекта
-│   └── tech_spec.md        # Техническое задание
-├── tasks
-│   ├── admin.py
-│   ├── apps.py
-│   ├── migrations/
-│   ├── models.py
-│   ├── permissions.py
-│   ├── serializers.py
-│   ├── tests.py
-│   ├── urls.py
-│   └── views.py
-└── users/                  # Django app для пользователей
-    ├── admin.py
-    ├── apps.py
-    ├── models.py
-    ├── serializers.py
-    ├── urls.py
-    ├── utils.py
-    ├── views.py
-    ├── tests.py
-    └── migrations/
+└── README.md
+
 ```
 ---
 
