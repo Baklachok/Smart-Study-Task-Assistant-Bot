@@ -1,0 +1,31 @@
+import logging
+from typing import Optional
+from aiogram.types import Message
+
+logger = logging.getLogger(__name__)
+
+
+async def safe_edit_text(message: Optional[Message], text: str):
+    """Безопасно редактируем сообщение, если оно доступно"""
+    if message and hasattr(message, "edit_text"):
+        try:
+            await message.edit_text(text)
+            logger.info("Сообщение успешно обновлено: %s", text)
+        except Exception as e:
+            logger.error("Ошибка при редактировании сообщения: %s", e)
+    else:
+        logger.warning("Сообщение недоступно для редактирования")
+
+
+def extract_task_id(data: str, prefix: str) -> Optional[str]:
+    """Извлекает task_id из callback_data"""
+    if not data:
+        logger.warning("Пустые данные callback")
+        return None
+    if not data.startswith(prefix):
+        logger.warning("Данные не соответствуют префиксу %s: %s", prefix, data)
+        return None
+
+    task_id = data.split(":", 1)[1]
+    logger.info("Извлечен task_id: %s", task_id)
+    return task_id

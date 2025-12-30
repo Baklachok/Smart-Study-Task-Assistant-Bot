@@ -1,10 +1,15 @@
-from aiogram import Router
-from aiogram.types import Message
+from aiogram import Router, F
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+)
 from aiogram.filters import Command
 from ..config import settings
-from ..utils.auth import user_tokens, get_access_token
-from ..utils.http import api_client
+from ..keyboards import task_actions_kb
+from ..utils.auth import user_tokens, get_access_token, get_telegram_id
+from ..utils.http import api_client, task_api_request
 from ..utils.parsers import parse_add_task
+from ..utils.telegram_helpers import extract_task_id, safe_edit_text
 
 router = Router()
 
@@ -15,7 +20,7 @@ async def start_handler(message: Message):
         await message.answer("Ошибка: не удалось определить пользователя")
         return
 
-    telegram_id = message.from_user.id
+    telegram_id = get_telegram_id(message)
 
     payload = {
         "telegram_id": telegram_id,
@@ -125,38 +130,68 @@ async def list_tasks_handler(message: Message):
         await message.answer("Нет задач 😎")
         return
 
-    await message.answer(
-        "\n".join(f"{t['id']} — {t['title']} ({t['status']})" for t in tasks)
+    for task in tasks:
+        await message.answer(
+            f"📝 <b>{task['title']}</b>\nСтатус: {task['status']}",
+            reply_markup=task_actions_kb(task["id"]),
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.startswith("task_done:"))
+async def task_done_callback(callback: CallbackQuery):
+    access_token = get_access_token(callback)
+    if not access_token:
+        await callback.answer("Сначала /start", show_alert=True)
+        return
+
+    # Проверяем, что callback.data точно str
+    if not callback.data:
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+
+    task_id = extract_task_id(callback.data, "task_done:")
+    if not task_id:
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+
+    response = await task_api_request(
+        task_id, "patch", access_token, {"status": "done"}
+    )
+
+    # Проверяем, что message — это Message (не InaccessibleMessage)
+    message = callback.message
+    if message is not None and isinstance(message, Message):
+        await safe_edit_text(message, "✅ Задача завершена")
+
+    await callback.answer() if response.status_code == 200 else await callback.answer(
+        "Ошибка", show_alert=True
     )
 
 
-@router.message(Command("done"))
-async def done_task_handler(message: Message):
-    if not message.text:
-        await message.answer("Использование: /done <task_id>")
-        return
-
-    access_token = get_access_token(message)
+@router.callback_query(F.data.startswith("task_delete:"))
+async def task_delete_callback(callback: CallbackQuery):
+    access_token = get_access_token(callback)
     if not access_token:
-        await message.answer("Сначала авторизуйтесь через /start")
+        await callback.answer("Сначала /start", show_alert=True)
         return
 
-    try:
-        _, task_id = message.text.split(" ", 1)
-    except ValueError:
-        await message.answer("Использование: /done <task_id>")
+    # Проверяем, что callback.data точно str
+    if not callback.data:
+        await callback.answer("Ошибка данных", show_alert=True)
         return
 
-    headers = {"Authorization": f"Bearer {access_token}"}
+    task_id = extract_task_id(callback.data, "task_delete:")
+    if not task_id:
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
 
-    async with api_client() as client:
-        response = await client.patch(
-            f"{settings.API_URL}/tasks/{task_id}/",
-            headers=headers,
-            json={"status": "done"},
-        )
+    response = await task_api_request(task_id, "delete", access_token)
 
-    if response.status_code == 200:
-        await message.answer("Задача завершена ✅")
-    else:
-        await message.answer(f"Ошибка: {response.text}")
+    message = callback.message
+    if message is not None and isinstance(message, Message):
+        await safe_edit_text(message, "❌ Задача удалена")
+
+    await callback.answer() if response.status_code == 204 else await callback.answer(
+        "Ошибка удаления", show_alert=True
+    )

@@ -117,8 +117,9 @@ docker-compose exec backend python manage.py createsuperuser
 │   ├── bot.py                   # Точка входа
 │   ├── config.py                # Настройки бота
 │   ├── handlers/
-│   │   ├── __init__.py
 │   │   └── tasks.py             # Команды /start, /tasks, /add_task, /done
+│   ├── keyboards/
+│   │   └── tasks.py
 │   └── utils/
 │       ├── auth.py              # JWT, in-memory token storage
 │       ├── http.py              # HTTP client для API

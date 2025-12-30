@@ -1,3 +1,5 @@
+import logging
+
 from drf_spectacular.utils import extend_schema
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,6 +14,9 @@ from .serializers import (
 from .utils import get_tokens_for_user
 
 
+logger = logging.getLogger(__name__)
+
+
 @extend_schema(
     request=TelegramLoginSerializer,
     responses=TelegramLoginResponseSerializer,
@@ -23,6 +28,14 @@ class TelegramLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        logger.info(
+            "Telegram login attempt",
+            extra={
+                "telegram_id": request.data.get("telegram_id"),
+                "username": request.data.get("username"),
+            },
+        )
+
         serializer = TelegramLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -37,17 +50,44 @@ class TelegramLoginView(APIView):
             },
         )
 
+        updated_fields: list[str] = []
+
         if not created:
-            updated = False
             for field in ("username", "first_name", "language", "timezone"):
                 value = data.get(field)
                 if value and getattr(user, field) != value:
                     setattr(user, field, value)
-                    updated = True
-            if updated:
-                user.save()
+                    updated_fields.append(field)
+
+            if updated_fields:
+                user.save(update_fields=updated_fields)
+                logger.info(
+                    "Telegram user updated",
+                    extra={
+                        "user_id": user.id,
+                        "telegram_id": user.telegram_id,
+                        "updated_fields": updated_fields,
+                    },
+                )
+
+        if created:
+            logger.info(
+                "Telegram user created",
+                extra={
+                    "user_id": user.id,
+                    "telegram_id": user.telegram_id,
+                },
+            )
 
         tokens = get_tokens_for_user(user)
+
+        logger.info(
+            "JWT tokens issued for Telegram user",
+            extra={
+                "user_id": user.id,
+                "telegram_id": user.telegram_id,
+            },
+        )
 
         return Response(
             {
@@ -72,4 +112,15 @@ class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)
+        logger.debug(
+            "User requested /me",
+            extra={
+                "user_id": request.user.id,
+                "telegram_id": getattr(request.user, "telegram_id", None),
+            },
+        )
+
+        return Response(
+            UserSerializer(request.user).data,
+            status=status.HTTP_200_OK,
+        )

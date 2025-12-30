@@ -1,19 +1,35 @@
-from aiogram.types import Message
-
+import logging
 from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 # Хранилище токенов
 user_tokens: Dict[int, str] = {}
 
 
-def get_telegram_id(message: Message) -> int | None:
-    if message.from_user is None:
-        return None
-    return message.from_user.id
+def get_telegram_id(obj) -> int:
+    """
+    Унифицированное получение telegram_id
+    """
+    if hasattr(obj, "from_user") and obj.from_user:
+        telegram_id = obj.from_user.id
+        logger.debug("Got telegram_id=%s from message object", telegram_id)
+        return telegram_id
+
+    if hasattr(obj, "message") and obj.message and obj.message.from_user:
+        telegram_id = obj.message.from_user.id
+        logger.debug("Got telegram_id=%s from callback object", telegram_id)
+        return telegram_id
+
+    logger.error("Cannot determine telegram_id from object: %s", obj)
+    raise RuntimeError("Cannot determine telegram_id")
 
 
-def get_access_token(message: Message) -> str | None:
-    telegram_id = get_telegram_id(message)
-    if telegram_id is None:
-        return None
-    return user_tokens.get(telegram_id)
+def get_access_token(obj) -> str | None:
+    telegram_id = get_telegram_id(obj)
+    token = user_tokens.get(telegram_id)
+    if token:
+        logger.debug("Access token found for telegram_id=%s", telegram_id)
+    else:
+        logger.warning("Access token not found for telegram_id=%s", telegram_id)
+    return token
