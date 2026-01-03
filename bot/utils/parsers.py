@@ -4,6 +4,10 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+class AddTaskParseError(ValueError):
+    """Ошибка парсинга команды /add_task"""
+
+
 def parse_add_task(text: str) -> tuple[str, str | None, str | None]:
     """
     Парсит:
@@ -45,3 +49,21 @@ def parse_add_task(text: str) -> tuple[str, str | None, str | None]:
         priority,
     )
     return title, due_at, priority
+
+
+def parse_add_course(text: str) -> tuple[str, str | None]:
+    """
+    /add_course Title | Description
+    """
+    _, data = text.split(" ", 1)
+    parts = [p.strip() for p in data.split("|", 1)]
+
+    title = parts[0]
+    description = parts[1] if len(parts) > 1 else None
+
+    logger.debug(
+        "Parsed add_course command",
+        extra={"title": title},
+    )
+
+    return title, description

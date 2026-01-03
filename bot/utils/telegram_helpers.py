@@ -1,11 +1,11 @@
 import logging
 from typing import Optional
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, InaccessibleMessage
 
 logger = logging.getLogger(__name__)
 
 
-async def safe_edit_text(message: Optional[Message], text: str):
+async def safe_edit_text(message: Message | InaccessibleMessage | None, text: str):
     """Безопасно редактируем сообщение, если оно доступно"""
     if message and hasattr(message, "edit_text"):
         try:
@@ -29,3 +29,16 @@ def extract_task_id(data: str, prefix: str) -> Optional[str]:
     task_id = data.split(":", 1)[1]
     logger.info("Извлечен task_id: %s", task_id)
     return task_id
+
+
+async def require_auth(obj: Message | CallbackQuery) -> str | None:
+    from .auth import get_access_token
+
+    token = get_access_token(obj)
+    if not token:
+        if isinstance(obj, Message):
+            await obj.answer("Сначала авторизуйтесь через /start")
+        else:
+            await obj.answer("Сначала /start", show_alert=True)
+        return None
+    return token
