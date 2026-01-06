@@ -6,7 +6,7 @@ from aiogram.types import BotCommand
 
 from bot.commands import COMMANDS
 from bot.config import settings
-from bot.handlers import tasks, courses, help
+from bot.handlers import tasks, courses, help, topics, unknown, start
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,9 +34,12 @@ async def main():
     bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
     dp = Dispatcher()
 
+    dp.include_router(start.router)
     dp.include_router(tasks.router)
     dp.include_router(courses.router)
     dp.include_router(help.router)
+    dp.include_router(topics.router)
+    dp.include_router(unknown.router)
 
     await setup_bot_commands(bot)
     await dp.start_polling(bot)

@@ -13,13 +13,13 @@
 └─────┬───────┘
       │ HTTP
 ┌─────▼─────────────────────┐
-│ Django REST API            │
-│                             │
-│  Auth (Telegram)           │
-│  Tasks / Courses / Topics  │
-│  Reminders                 │
-│  AI Service (optional)     │
-│                             │
+│ Django REST API           │
+│                           │
+│  Auth (Telegram)          │
+│  Tasks / Courses / Topics │
+│  Reminders                │
+│  AI Service (optional)    │
+│                           │
 └─────┬─────────────────────┘
       │
 ┌─────▼───────┐

@@ -1,14 +1,10 @@
 import logging
 
 from aiogram import Router, F
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-)
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from ..config import settings
 from ..keyboards import task_actions_kb
-from ..utils.auth import user_tokens, get_telegram_id
 from ..utils.formatters import format_due_at, format_priority
 from ..utils.http import api_client, task_api_request
 from ..utils.parsers import parse_add_task, AddTaskParseError
@@ -17,54 +13,6 @@ from ..utils.telegram_helpers import extract_task_id, safe_edit_text, require_au
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-
-@router.message(Command("start"))
-async def start_handler(message: Message):
-    if message.from_user is None:
-        logger.warning("Start command without from_user")
-        await message.answer("Ошибка: не удалось определить пользователя")
-        return
-
-    telegram_id = get_telegram_id(message)
-    logger.info("Start auth for telegram_id=%s", telegram_id)
-
-    payload = {
-        "telegram_id": telegram_id,
-        "username": message.from_user.username,
-        "first_name": message.from_user.first_name,
-        "language": message.from_user.language_code or "en",
-        "timezone": "UTC",
-    }
-
-    async with api_client() as client:
-        response = await client.post(
-            f"{settings.API_URL}/users/telegram-login/",
-            json=payload,
-        )
-
-    data = response.json()
-    access_token = data.get("tokens", {}).get("access")
-
-    if not access_token:
-        logger.error("Auth failed for telegram_id=%s: no access token", telegram_id)
-        await message.answer("Ошибка авторизации")
-        return
-
-    user_tokens[telegram_id] = access_token
-
-    user = data["user"]
-    created = data.get("created", False)
-    logger.info(
-        "User authenticated telegram_id=%s created=%s",
-        telegram_id,
-        created,
-    )
-
-    await message.answer(
-        f"Привет, {user['first_name']}!\n"
-        + ("Регистрация завершена ✅" if created else "С возвращением!")
-    )
 
 
 @router.message(Command("add_task"))
@@ -115,13 +63,13 @@ async def add_task_handler(message: Message):
     if response.status_code == 201:
         logger.info("Task created successfully: %r", title)
         await message.answer(f"Задача «{title}» создана ✅")
-    else:
-        logger.error(
-            "Task creation failed status=%s response=%s",
-            response.status_code,
-            response.text,
-        )
-        await message.answer("Ошибка создания задачи ❌")
+        return
+    logger.error(
+        "Task creation failed status=%s response=%s",
+        response.status_code,
+        response.text,
+    )
+    await message.answer("Ошибка создания задачи ❌")
 
 
 @router.message(Command("tasks"))
@@ -150,21 +98,23 @@ async def list_tasks_handler(message: Message):
         await message.answer("Ошибка загрузки задач ❌")
         return
 
-    tasks = response.json()
+    tasks = response.json().get("results", [])
     logger.info("Fetched %d tasks", len(tasks))
+
     if not tasks:
         await message.answer("Нет задач 😎")
         return
 
     for task in tasks:
+        text = (
+            f"📝 <b>{task['title']}</b>\n"
+            f"📄 {task.get('description') or '—'}\n"
+            f"⏰ Дедлайн: {format_due_at(task.get('due_at'))}\n"
+            f"⚡ Приоритет: {format_priority(task.get('priority'))}\n"
+            f"📌 Статус: {task['status']}"
+        )
         await message.answer(
-            (
-                f"📝 <b>{task['title']}</b>\n"
-                f"📄 {task.get('description') or '—'}\n"
-                f"⏰ Дедлайн: {format_due_at(task.get('due_at'))}\n"
-                f"⚡ Приоритет: {format_priority(task.get('priority'))}\n"
-                f"📌 Статус: {task['status']}"
-            ),
+            text,
             reply_markup=task_actions_kb(task["id"]),
             parse_mode="HTML",
         )
@@ -193,13 +143,14 @@ async def task_done_callback(callback: CallbackQuery):
         logger.info("Task marked done task_id=%s", task_id)
         await safe_edit_text(callback.message, "✅ Задача завершена")
         await callback.answer()
-    else:
-        logger.error(
-            "Failed to mark task done task_id=%s status=%s",
-            task_id,
-            response.status_code,
-        )
-        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    logger.error(
+        "Failed to mark task done task_id=%s status=%s",
+        task_id,
+        response.status_code,
+    )
+    await callback.answer("Ошибка", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("task_delete:"))
@@ -223,10 +174,11 @@ async def task_delete_callback(callback: CallbackQuery):
         logger.info("Task deleted task_id=%s", task_id)
         await safe_edit_text(callback.message, "❌ Задача удалена")
         await callback.answer()
-    else:
-        logger.error(
-            "Failed to deleted task_id=%s status=%s",
-            task_id,
-            response.status_code,
-        )
-        await callback.answer("Ошибка удаления", show_alert=True)
+        return
+
+    logger.error(
+        "Failed to deleted task_id=%s status=%s",
+        task_id,
+        response.status_code,
+    )
+    await callback.answer("Ошибка удаления", show_alert=True)

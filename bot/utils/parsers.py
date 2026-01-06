@@ -67,3 +67,16 @@ def parse_add_course(text: str) -> tuple[str, str | None]:
     )
 
     return title, description
+
+
+def parse_add_topic(text: str) -> tuple[str, str]:
+    """
+    /add_topic Title | course_id
+    """
+    _, payload = text.split(" ", 1)
+    parts = [p.strip() for p in payload.split("|")]
+
+    if len(parts) != 2:
+        raise ValueError("Invalid format")
+
+    return parts[0], parts[1]

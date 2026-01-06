@@ -14,4 +14,5 @@ COMMANDS: list[CommandInfo] = [
     CommandInfo("done", "Завершить задачу"),
     CommandInfo("add_course", "Добавить курс"),
     CommandInfo("help", "Помощь"),
+    CommandInfo("add_topic", "Добавить тему"),
 ]
