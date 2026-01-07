@@ -1,5 +1,7 @@
 import uuid
 from django.db import models
+
+from topics.models import Topic
 from users.models import User
 
 
@@ -24,6 +26,13 @@ class Task(models.Model):
     )
     priority = models.CharField(
         max_length=6, choices=Priority.choices, default=Priority.MEDIUM
+    )
+    topic = models.ForeignKey(
+        Topic,
+        on_delete=models.SET_NULL,
+        related_name="tasks",
+        null=True,
+        blank=True,
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

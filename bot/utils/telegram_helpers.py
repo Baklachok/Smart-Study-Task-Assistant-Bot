@@ -2,6 +2,8 @@ import logging
 from typing import Optional
 from aiogram.types import Message, CallbackQuery, InaccessibleMessage
 
+from bot.utils.auth import get_access_token
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ async def safe_edit_text(message: Message | InaccessibleMessage | None, text: st
         logger.warning("Сообщение недоступно для редактирования")
 
 
-def extract_task_id(data: str, prefix: str) -> Optional[str]:
+def extract_task_id(data: str | None, prefix: str) -> Optional[str]:
     """Извлекает task_id из callback_data"""
     if not data:
         logger.warning("Пустые данные callback")
@@ -32,8 +34,7 @@ def extract_task_id(data: str, prefix: str) -> Optional[str]:
 
 
 async def require_auth(obj: Message | CallbackQuery) -> str | None:
-    from .auth import get_access_token
-
+    logger.warning("Unauthorized action from user")
     token = get_access_token(obj)
     if not token:
         if isinstance(obj, Message):

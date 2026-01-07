@@ -4,6 +4,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import User
 from .serializers import (
@@ -11,7 +12,6 @@ from .serializers import (
     UserSerializer,
     TelegramLoginResponseSerializer,
 )
-from .utils import get_tokens_for_user
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,23 @@ logger = logging.getLogger(__name__)
 )
 class TelegramLoginView(APIView):
     permission_classes = [permissions.AllowAny]
+
+    def _get_tokens_for_user(self, user):
+        logger.info(
+            "JWT tokens issued",
+            extra={
+                "user_id": user.id,
+                "email": getattr(user, "email", None),
+                "is_active": user.is_active,
+            },
+        )
+
+        refresh = RefreshToken.for_user(user)
+
+        return {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        }
 
     def post(self, request):
         logger.info(
@@ -79,7 +96,7 @@ class TelegramLoginView(APIView):
                 },
             )
 
-        tokens = get_tokens_for_user(user)
+        tokens = self._get_tokens_for_user(user)
 
         logger.info(
             "JWT tokens issued for Telegram user",

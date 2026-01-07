@@ -1,11 +1,11 @@
 import logging
+from datetime import datetime
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from ..config import settings
 from ..keyboards import task_actions_kb
-from ..utils.formatters import format_due_at, format_priority
 from ..utils.http import api_client, task_api_request
 from ..utils.parsers import parse_add_task, AddTaskParseError
 from ..utils.telegram_helpers import extract_task_id, safe_edit_text, require_auth
@@ -13,6 +13,28 @@ from ..utils.telegram_helpers import extract_task_id, safe_edit_text, require_au
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+PRIORITY_EMOJI = {
+    "low": "🟢 low",
+    "medium": "🟡 medium",
+    "high": "🔴 high",
+}
+
+
+def _format_priority(priority: str | None) -> str:
+    if priority is None:
+        return "—"
+    return PRIORITY_EMOJI.get(priority, "—")
+
+
+def _format_due_at(due_at: str | None) -> str:
+    if not due_at:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(due_at.replace("Z", "+00:00"))
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except ValueError:
+        return due_at
 
 
 @router.message(Command("add_task"))
@@ -23,7 +45,6 @@ async def add_task_handler(message: Message):
 
     access_token = await require_auth(message)
     if not access_token:
-        logger.warning("Add task without auth")
         return
 
     try:
@@ -76,11 +97,15 @@ async def add_task_handler(message: Message):
 async def list_tasks_handler(message: Message):
     access_token = await require_auth(message)
     if not access_token:
-        logger.warning("Tasks list requested without auth")
         return
 
     text = (message.text or "").lower()
-    filter_type = "today" if "today" in text else "week" if "week" in text else None
+    if "today" in text:
+        filter_type = "today"
+    elif "week" in text:
+        filter_type = "week"
+    else:
+        filter_type = None
 
     async with api_client() as client:
         response = await client.get(
@@ -102,83 +127,69 @@ async def list_tasks_handler(message: Message):
     logger.info("Fetched %d tasks", len(tasks))
 
     if not tasks:
-        await message.answer("Нет задач 😎")
+        await message.answer(
+            "Нет задач 😎\n\n"
+            "Подсказка:\n"
+            "• /tasks today — задачи на сегодня\n"
+            "• /tasks week — задачи на неделю"
+        )
         return
 
     for task in tasks:
-        text = (
+        task_text = (
             f"📝 <b>{task['title']}</b>\n"
             f"📄 {task.get('description') or '—'}\n"
-            f"⏰ Дедлайн: {format_due_at(task.get('due_at'))}\n"
-            f"⚡ Приоритет: {format_priority(task.get('priority'))}\n"
+            f"⏰ Дедлайн: {_format_due_at(task.get('due_at'))}\n"
+            f"⚡ Приоритет: {_format_priority(task.get('priority'))}\n"
             f"📌 Статус: {task['status']}"
         )
         await message.answer(
-            text,
+            task_text,
             reply_markup=task_actions_kb(task["id"]),
             parse_mode="HTML",
         )
 
 
+async def _handle_task_callback(
+    callback: CallbackQuery, task_id: str | None, action: str, success_text: str
+):
+    access_token = await require_auth(callback)
+    if not access_token or not task_id:
+        return
+
+    if action == "delete":
+        method = "delete"
+        payload = None
+    elif action == "done":
+        method = "patch"
+        payload = {"status": "done"}
+    else:
+        logger.error("Unknown action=%s", action)
+        await callback.answer("Неизвестное действие", show_alert=True)
+        return
+
+    response = await task_api_request(task_id, method, access_token, payload)
+
+    if (action == "done" and response.status_code == 200) or (
+        action == "delete" and response.status_code == 204
+    ):
+        logger.info("Task %s successfully task_id=%s", action, task_id)
+        await safe_edit_text(callback.message, success_text)
+        await callback.answer()
+    else:
+        logger.error(
+            "Failed task %s task_id=%s status=%s", action, task_id, response.status_code
+        )
+        await callback.answer("Ошибка ❌", show_alert=True)
+
+
 @router.callback_query(F.data.startswith("task_done:"))
 async def task_done_callback(callback: CallbackQuery):
-    access_token = await require_auth(callback)
-    if not access_token or not callback.data:
-        logger.warning("Task done callback without auth or data")
-        return
-
     task_id = extract_task_id(callback.data, "task_done:")
-    if not task_id:
-        logger.warning("Invalid task_done callback data=%s", callback.data)
-        await callback.answer("Ошибка данных", show_alert=True)
-        return
-
-    logger.info("Marking task done task_id=%s", task_id)
-
-    response = await task_api_request(
-        task_id, "patch", access_token, {"status": "done"}
-    )
-
-    if response.status_code == 200:
-        logger.info("Task marked done task_id=%s", task_id)
-        await safe_edit_text(callback.message, "✅ Задача завершена")
-        await callback.answer()
-        return
-
-    logger.error(
-        "Failed to mark task done task_id=%s status=%s",
-        task_id,
-        response.status_code,
-    )
-    await callback.answer("Ошибка", show_alert=True)
+    await _handle_task_callback(callback, task_id, "done", "✅ Задача завершена")
 
 
 @router.callback_query(F.data.startswith("task_delete:"))
 async def task_delete_callback(callback: CallbackQuery):
-    access_token = await require_auth(callback)
-    if not access_token or not callback.data:
-        logger.warning("Task delete callback without auth or data")
-        return
-
     task_id = extract_task_id(callback.data, "task_delete:")
-    if not task_id:
-        logger.warning("Invalid task_delete callback data=%s", callback.data)
-        await callback.answer("Ошибка данных", show_alert=True)
-        return
-
-    logger.info("Marking task delete task_id=%s", task_id)
-
-    response = await task_api_request(task_id, "delete", access_token)
-
-    if response.status_code == 204:
-        logger.info("Task deleted task_id=%s", task_id)
-        await safe_edit_text(callback.message, "❌ Задача удалена")
-        await callback.answer()
-        return
-
-    logger.error(
-        "Failed to deleted task_id=%s status=%s",
-        task_id,
-        response.status_code,
-    )
-    await callback.answer("Ошибка удаления", show_alert=True)
+    await _handle_task_callback(callback, task_id, "delete", "❌ Задача удалена")

@@ -38,7 +38,6 @@
 - Telegram-бот не содержит бизнес-логики
 - API проектируется независимо от Telegram
 - Все сущности принадлежат пользователю
-- Поддержка расширения под Telegram Mini Apps
 
 ## 3. Пользовательские сценарии
 
@@ -53,7 +52,6 @@
 
 - Добавление: `/add_task Название | 2025-12-20 18:00 | high`
 - Просмотр: `/tasks`, `/tasks today`, `/tasks week`
-- Завершение: `/done <task_id>`
 
 ### 3.3 Курсы и темы
 
@@ -132,7 +130,6 @@
 ### 5.1 Авторизация
 
 - По `telegram_id`
-- Для Mini Apps — проверка `initData`
 
 ### 5.2 Эндпоинты
 
@@ -159,13 +156,6 @@ POST /api/v1/courses/
 GET  /api/v1/courses/
 ```
 
-**WebApp (Mini Apps) endpoints:**
-
-```
-GET /api/v1/webapp/tasks/
-GET /api/v1/webapp/stats/
-```
-
 ## 6. Telegram Bot
 
 ### 6.1 Команды
@@ -175,7 +165,6 @@ GET /api/v1/webapp/stats/
 | /start      | Регистрация      |
 | /add_task   | Создание задачи  |
 | /tasks      | Список задач     |
-| /done       | Завершить задачу |
 | /add_course | Добавить курс    |
 | /help       | Помощь           |
 
