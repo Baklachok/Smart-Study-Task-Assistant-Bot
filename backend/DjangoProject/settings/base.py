@@ -15,6 +15,7 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.admin",
     "django_filters",
+    "django_celery_beat",
 ]
 
 THIRD_PARTY_APPS = [

@@ -16,7 +16,7 @@
 ### 1.3 Стек технологий
 
 - Python 3.12+
-- Django 6.x
+- Django 5.x
 - Django REST Framework
 - PostgreSQL 15+
 - aiogram 3.x

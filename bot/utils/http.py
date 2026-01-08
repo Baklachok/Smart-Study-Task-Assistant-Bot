@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 from bot.config import settings
@@ -15,7 +16,7 @@ async def api_client() -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def task_api_request(
-    task_id: str, method: str, token: str, data: dict | None = None
+    task_id: str, method: str, token: str, data: dict[str, Any] | None = None
 ) -> httpx.Response:
     """
     Универсальный API-запрос для задачи.

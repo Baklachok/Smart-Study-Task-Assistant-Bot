@@ -1,6 +1,8 @@
 import logging
+from typing import cast
 
 from drf_spectacular.utils import extend_schema
+from rest_framework.request import Request
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 class TelegramLoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    def _get_tokens_for_user(self, user):
+    def _get_tokens_for_user(self, user: User) -> dict[str, str]:
         logger.info(
             "JWT tokens issued",
             extra={
@@ -44,7 +46,7 @@ class TelegramLoginView(APIView):
             "access": str(refresh.access_token),
         }
 
-    def post(self, request):
+    def post(self, request: Request) -> Response:
         logger.info(
             "Telegram login attempt",
             extra={
@@ -128,12 +130,13 @@ class MeView(APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
+        user = cast(User, request.user)
         logger.debug(
             "User requested /me",
             extra={
-                "user_id": request.user.id,
-                "telegram_id": getattr(request.user, "telegram_id", None),
+                "user_id": user.id,
+                "telegram_id": user.telegram_id,
             },
         )
 

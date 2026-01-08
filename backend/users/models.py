@@ -1,28 +1,29 @@
 import uuid
-from typing import Optional, cast, ClassVar
+from typing import Optional, TypeVar, ClassVar
 
 from django.contrib.auth.base_user import BaseUserManager
-from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
-from django.utils.timezone import now
+from django.db import models
+
+UserType = TypeVar("UserType", bound="User")
 
 
-class UserManager(BaseUserManager):
+class UserManager(BaseUserManager[UserType]):
     use_in_migrations = True
 
     def create_user(
-        self, telegram_id: int, password: Optional[str] = None, **extra_fields
-    ) -> "User":
+        self, telegram_id: int, password: Optional[str] = None, **extra_fields: object
+    ) -> UserType:
         if not telegram_id:
             raise ValueError("Telegram ID must be set")
-        user = cast(User, self.model(telegram_id=telegram_id, **extra_fields))
+        user = self.model(telegram_id=telegram_id, **extra_fields)  # cast не нужен
         user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(
-        self, telegram_id: int, password: Optional[str] = None, **extra_fields
-    ) -> "User":
+        self, telegram_id: int, password: Optional[str] = None, **extra_fields: object
+    ) -> UserType:
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
@@ -53,8 +54,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         max_length=50, default="UTC"
     )
     is_active: models.BooleanField = models.BooleanField(default=True)
-    is_staff: ClassVar[models.BooleanField] = models.BooleanField(default=False)
-    created_at: ClassVar[models.DateTimeField] = models.DateTimeField(default=now)
+    is_staff: models.BooleanField = models.BooleanField(default=False)
+    created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
 
     objects = UserManager()
 

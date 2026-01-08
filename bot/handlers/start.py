@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-@router.message(Command("start"))
-async def start_handler(message: Message):
+@router.message(Command("start"))  # type: ignore
+async def start_handler(message: Message) -> None:
     if not message.from_user:
         logger.warning("Start command without from_user")
         await message.answer("Ошибка: не удалось определить пользователя")

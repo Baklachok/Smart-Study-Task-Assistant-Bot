@@ -1,21 +1,29 @@
 import logging
 from datetime import timedelta
+from typing import Any, cast
 
+from django.db.models import QuerySet
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, permissions
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.serializers import BaseSerializer
 
 from .models import Task
 from .permissions import IsOwner
 from .serializers import TaskSerializer
-
+from users.models import User
 
 logger = logging.getLogger(__name__)
 
 
 def log_task_action(
-    action: str, task: Task, user_id: int, extra_fields: dict | None = None
-):
+    action: str,
+    task: Task,
+    user_id: int | str,
+    extra_fields: dict[str, Any] | None = None,
+) -> None:
     """Универсальный логгер для действий с задачами"""
     extra = {
         "task_id": task.id,
@@ -32,8 +40,8 @@ class TaskListCreateView(generics.ListCreateAPIView):
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        user = self.request.user
+    def get_queryset(self) -> QuerySet[Any]:
+        user = cast(User, self.request.user)
         filter_by = self.request.query_params.get("filter")
         now = timezone.now()
 
@@ -53,12 +61,13 @@ class TaskListCreateView(generics.ListCreateAPIView):
 
         return queryset
 
-    def perform_create(self, serializer):
-        task = serializer.save(user=self.request.user)
+    def perform_create(self, serializer: BaseSerializer) -> None:
+        user = cast(User, self.request.user)
+        task = serializer.save(user=user)
         log_task_action(
             "created",
             task,
-            self.request.user.id,
+            int(user.id),
             extra_fields={
                 "title": task.title,
                 "due_at": task.due_at,
@@ -73,14 +82,15 @@ class TaskDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
     queryset = Task.objects.all()
 
-    def retrieve(self, request, *args, **kwargs):
+    def retrieve(
+        self, request: Request, *args: tuple[Any], **kwargs: dict[str, Any]
+    ) -> Response:
         task = self.get_object()
-        logger.debug(
-            "Task retrieved", extra={"task_id": task.id, "user_id": request.user.id}
-        )
+        user = cast(User, self.request.user)
+        logger.debug("Task retrieved", extra={"task_id": task.id, "user_id": user.id})
         return super().retrieve(request, *args, **kwargs)
 
-    def perform_update(self, serializer):
+    def perform_update(self, serializer: BaseSerializer) -> None:
         task = self.get_object()
         old_data = {
             field: getattr(task, field) for field in serializer.validated_data.keys()
@@ -97,15 +107,15 @@ class TaskDetailView(generics.RetrieveUpdateDestroyAPIView):
         log_task_action(
             "updated",
             updated_task,
-            updated_task.user_id,
+            updated_task.user.id,
             extra_fields={"changed_fields": changed_fields},
         )
 
-    def perform_destroy(self, instance):
+    def perform_destroy(self, instance: Task) -> None:
         log_task_action(
             "deleted",
             instance,
-            instance.user_id,
+            instance.user.id,  # type: ignore[attr-defined]
             extra_fields={"title": instance.title},
         )
         instance.delete()

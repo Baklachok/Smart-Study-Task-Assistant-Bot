@@ -7,7 +7,9 @@ from bot.utils.auth import get_access_token
 logger = logging.getLogger(__name__)
 
 
-async def safe_edit_text(message: Message | InaccessibleMessage | None, text: str):
+async def safe_edit_text(
+    message: Message | InaccessibleMessage | None, text: str
+) -> None:
     """Безопасно редактируем сообщение, если оно доступно"""
     if message and hasattr(message, "edit_text"):
         try:

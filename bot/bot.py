@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def setup_bot_commands(bot: Bot, retries: int = 5, delay: float = 2.0):
+async def setup_bot_commands(bot: Bot, retries: int = 5, delay: float = 2.0) -> None:
     """Регистрируем команды бота с повторной попыткой"""
     for attempt in range(1, retries + 1):
         try:
@@ -30,7 +30,7 @@ async def setup_bot_commands(bot: Bot, retries: int = 5, delay: float = 2.0):
     logger.error("Не удалось зарегистрировать команды после нескольких попыток")
 
 
-async def main():
+async def main() -> None:
     bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
     dp = Dispatcher()
 

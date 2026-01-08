@@ -37,8 +37,8 @@ def _format_due_at(due_at: str | None) -> str:
         return due_at
 
 
-@router.message(Command("add_task"))
-async def add_task_handler(message: Message):
+@router.message(Command("add_task"))  # type: ignore
+async def add_task_handler(message: Message) -> None:
     if not message.text:
         await message.answer("Использование: /add_task Название | дата | приоритет")
         return
@@ -93,8 +93,8 @@ async def add_task_handler(message: Message):
     await message.answer("Ошибка создания задачи ❌")
 
 
-@router.message(Command("tasks"))
-async def list_tasks_handler(message: Message):
+@router.message(Command("tasks"))  # type: ignore
+async def list_tasks_handler(message: Message) -> None:
     access_token = await require_auth(message)
     if not access_token:
         return
@@ -152,7 +152,7 @@ async def list_tasks_handler(message: Message):
 
 async def _handle_task_callback(
     callback: CallbackQuery, task_id: str | None, action: str, success_text: str
-):
+) -> None:
     access_token = await require_auth(callback)
     if not access_token or not task_id:
         return
@@ -183,13 +183,13 @@ async def _handle_task_callback(
         await callback.answer("Ошибка ❌", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("task_done:"))
-async def task_done_callback(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("task_done:"))  # type: ignore
+async def task_done_callback(callback: CallbackQuery) -> None:
     task_id = extract_task_id(callback.data, "task_done:")
     await _handle_task_callback(callback, task_id, "done", "✅ Задача завершена")
 
 
-@router.callback_query(F.data.startswith("task_delete:"))
-async def task_delete_callback(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("task_delete:"))  # type: ignore
+async def task_delete_callback(callback: CallbackQuery) -> None:
     task_id = extract_task_id(callback.data, "task_delete:")
     await _handle_task_callback(callback, task_id, "delete", "❌ Задача удалена")

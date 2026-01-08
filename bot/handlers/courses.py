@@ -10,8 +10,8 @@ from bot.utils.parsers import parse_add_course
 router = Router()
 
 
-@router.message(Command("add_course"))
-async def add_course_handler(message: Message):
+@router.message(Command("add_course"))  # type: ignore
+async def add_course_handler(message: Message) -> None:
     if not message.text:
         await message.answer("Использование:\n/add_course Название | Описание")
         return
