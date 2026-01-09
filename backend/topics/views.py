@@ -15,7 +15,13 @@ class TopicListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self) -> QuerySet[Any]:
-        return Topic.objects.filter(course__user=self.request.user)
+        queryset = Topic.objects.filter(course__user=self.request.user)
+
+        course_id = self.request.query_params.get("course")
+        if course_id:
+            queryset = queryset.filter(course_id=course_id)
+
+        return queryset
 
     def perform_create(self, serializer: BaseSerializer) -> None:
         serializer.save()

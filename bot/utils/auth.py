@@ -1,7 +1,7 @@
 import logging
 from typing import Dict
 
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 user_tokens: Dict[int, str] = {}
 
 
-def get_telegram_id(obj: Message) -> int:
+def get_telegram_id(obj: Message | CallbackQuery) -> int:
     """
     Унифицированное получение telegram_id
     """
@@ -27,7 +27,7 @@ def get_telegram_id(obj: Message) -> int:
     raise RuntimeError("Cannot determine telegram_id")
 
 
-def get_access_token(obj: Message) -> str | None:
+def get_access_token(obj: Message | CallbackQuery) -> str | None:
     telegram_id = get_telegram_id(obj)
     token = user_tokens.get(telegram_id)
     if token:

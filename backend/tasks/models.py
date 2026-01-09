@@ -55,3 +55,18 @@ class Task(models.Model):
 
     def __str__(self) -> str:
         return f"{self.title} ({self.status})"
+
+
+class Reminder(models.Model):
+    id: models.UUIDField = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="reminders")  # type: ignore
+    notify_at: models.DateTimeField = models.DateTimeField()
+    sent: models.BooleanField = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["notify_at"]
+
+    def __str__(self) -> str:
+        return f"Reminder for {self.task.title} at {self.notify_at}"
