@@ -28,7 +28,10 @@ class Task(models.Model):
 
     title: ClassVar[models.CharField] = models.CharField(max_length=255)
 
-    description: ClassVar[models.TextField] = models.TextField(blank=True)
+    description: ClassVar[models.TextField] = models.TextField(
+        blank=True,
+        null=True,
+    )
 
     due_at: ClassVar[models.DateTimeField] = models.DateTimeField(null=True, blank=True)
 

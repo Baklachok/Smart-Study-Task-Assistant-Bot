@@ -2,95 +2,138 @@ import logging
 from datetime import datetime
 
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
-from ..config import settings
+from ..formatters.tasks import format_task
 from ..keyboards import task_actions_kb
-from ..utils.http import api_client, task_api_request
-from ..utils.parsers import parse_add_task, AddTaskParseError
+from ..keyboards.tasks import priority_kb, topics_kb, skip_kb, skip_description_kb
+from ..services.tasks import create_task, fetch_tasks
+from ..services.topics import fetch_topics
+from ..states.tasks import AddTaskStates
+from ..utils.http import task_api_request
 from ..utils.telegram_helpers import extract_task_id, safe_edit_text, require_auth
 
 logger = logging.getLogger(__name__)
 
 router = Router()
 
-PRIORITY_EMOJI = {
-    "low": "🟢 low",
-    "medium": "🟡 medium",
-    "high": "🔴 high",
-}
-
-
-def _format_priority(priority: str | None) -> str:
-    if priority is None:
-        return "—"
-    return PRIORITY_EMOJI.get(priority, "—")
-
-
-def _format_due_at(due_at: str | None) -> str:
-    if not due_at:
-        return "—"
-    try:
-        dt = datetime.fromisoformat(due_at.replace("Z", "+00:00"))
-        return dt.strftime("%d.%m.%Y %H:%M")
-    except ValueError:
-        return due_at
-
 
 @router.message(Command("add_task"))  # type: ignore
-async def add_task_handler(message: Message) -> None:
-    if not message.text:
-        await message.answer("Использование: /add_task Название | дата | приоритет")
+async def add_task_handler(message: Message, state: FSMContext) -> None:
+    access_token = await require_auth(message)
+    if not access_token:
         return
+
+    await message.answer("Введите название задачи:")
+    await state.set_state(AddTaskStates.waiting_for_title)
+
+
+@router.message(AddTaskStates.waiting_for_title)  # type: ignore
+async def add_task_title(message: Message, state: FSMContext) -> None:
+    title = message.text.strip()
+    if not title:
+        await message.answer("Название не может быть пустым. Введите название:")
+        return
+    await state.update_data(title=title)
+
+    await message.answer(
+        "Введите дедлайн в формате YYYY-MM-DD HH:MM или нажмите 'Пропустить':",
+        reply_markup=skip_kb,
+    )
+    await state.set_state(AddTaskStates.waiting_for_due_at)
+
+
+@router.message(AddTaskStates.waiting_for_due_at)  # type: ignore
+async def add_task_due_at(message: Message, state: FSMContext) -> None:
+    due_at_text = message.text.strip()
+    due_at_iso = None
+
+    if due_at_text.lower() == "пропустить":
+        due_at_iso = None
+    else:
+        try:
+            due_at_iso = datetime.strptime(due_at_text, "%Y-%m-%d %H:%M").isoformat()
+        except ValueError:
+            await message.answer(
+                "Неверный формат даты. Попробуйте ещё раз или нажмите 'Пропустить'."
+            )
+            return
+
+    await state.update_data(due_at=due_at_iso)
+
+    await message.answer("Выберите приоритет:", reply_markup=priority_kb())
+    await state.set_state(AddTaskStates.waiting_for_priority)
+
+
+@router.callback_query(AddTaskStates.waiting_for_due_at, F.data == "skip_due_at")  # type: ignore
+async def skip_due_at_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(due_at=None)
+
+    # Отправляем следующий вопрос
+    await callback.message.answer("Выберите приоритет:", reply_markup=priority_kb())
+    await state.set_state(AddTaskStates.waiting_for_priority)
+    await callback.answer()
+
+
+@router.callback_query(AddTaskStates.waiting_for_priority)  # type: ignore
+async def add_task_priority(callback: CallbackQuery, state: FSMContext) -> None:
+    priority = callback.data
+    await state.update_data(priority=priority)
+
+    await callback.message.answer(
+        "Введите описание задачи или нажмите 'Пропустить':",
+        reply_markup=skip_description_kb,
+    )
+    await state.set_state(AddTaskStates.waiting_for_description)
+    await callback.answer()
+
+
+@router.message(AddTaskStates.waiting_for_description)  # type: ignore
+async def add_task_description(message: Message, state: FSMContext) -> None:
+    await state.update_data(description=message.text.strip() or None)
 
     access_token = await require_auth(message)
     if not access_token:
         return
 
-    try:
-        title, due_at, priority = parse_add_task(message.text)
-    except AddTaskParseError:
-        logger.warning("Invalid add_task format: %s", message.text)
-        await message.answer(
-            "Использование:\n"
-            "/add_task Название | [YYYY-MM-DD HH:MM] | [low|medium|high]"
-        )
+    topics = await fetch_topics(access_token)
+
+    await message.answer(
+        "Выберите топик задачи (или нажмите «Нет»):",
+        reply_markup=topics_kb(topics),
+    )
+    await state.set_state(AddTaskStates.waiting_for_topic)
+
+
+@router.callback_query(AddTaskStates.waiting_for_topic)  # type: ignore
+async def add_task_topic(callback: CallbackQuery, state: FSMContext) -> None:
+    access_token = await require_auth(callback)
+    if not access_token:
         return
 
-    logger.info(
-        "Creating task title=%r due_at=%s priority=%s",
-        title,
-        due_at,
-        priority,
+    data = await state.get_data()
+    topic_id = (
+        None if callback.data == "topic:none" else callback.data.replace("topic:", "")
     )
 
-    if priority and priority not in ("low", "medium", "high"):
-        await message.answer("Приоритет: low | medium | high")
-        return
+    payload = {
+        "title": data["title"],
+        "due_at": data.get("due_at"),
+        "priority": data.get("priority"),
+        "description": data.get("description"),
+        **({"topic_id": topic_id} if topic_id else {}),
+    }
 
-    payload: dict[str, str] = {"title": title}
-    if due_at:
-        payload["due_at"] = due_at
-    if priority:
-        payload["priority"] = priority
-
-    async with api_client() as client:
-        response = await client.post(
-            f"{settings.API_URL}/tasks/",
-            headers={"Authorization": f"Bearer {access_token}"},
-            json=payload,
-        )
+    response = await create_task(access_token, payload)
 
     if response.status_code == 201:
-        logger.info("Task created successfully: %r", title)
-        await message.answer(f"Задача «{title}» создана ✅")
-        return
-    logger.error(
-        "Task creation failed status=%s response=%s",
-        response.status_code,
-        response.text,
-    )
-    await message.answer("Ошибка создания задачи ❌")
+        await callback.message.edit_text(f"Задача «{data['title']}» создана ✅")
+    else:
+        await callback.message.edit_text("Ошибка создания задачи ❌")
+
+    await state.clear()
+    await callback.answer()
 
 
 @router.message(Command("tasks"))  # type: ignore
@@ -99,52 +142,28 @@ async def list_tasks_handler(message: Message) -> None:
     if not access_token:
         return
 
-    text = (message.text or "").lower()
-    if "today" in text:
-        filter_type = "today"
-    elif "week" in text:
-        filter_type = "week"
-    else:
-        filter_type = None
+    filter_type = (
+        "today"
+        if "today" in message.text.lower()
+        else "week"
+        if "week" in message.text.lower()
+        else None
+    )
 
-    async with api_client() as client:
-        response = await client.get(
-            f"{settings.API_URL}/tasks/",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params={"filter": filter_type} if filter_type else {},
-        )
+    response = await fetch_tasks(access_token, filter_type)
 
     if response.status_code != 200:
-        logger.error(
-            "Failed to fetch tasks status=%s response=%s",
-            response.status_code,
-            response.text,
-        )
         await message.answer("Ошибка загрузки задач ❌")
         return
 
     tasks = response.json().get("results", [])
-    logger.info("Fetched %d tasks", len(tasks))
-
     if not tasks:
-        await message.answer(
-            "Нет задач 😎\n\n"
-            "Подсказка:\n"
-            "• /tasks today — задачи на сегодня\n"
-            "• /tasks week — задачи на неделю"
-        )
+        await message.answer("Нет задач 😎")
         return
 
     for task in tasks:
-        task_text = (
-            f"📝 <b>{task['title']}</b>\n"
-            f"📄 {task.get('description') or '—'}\n"
-            f"⏰ Дедлайн: {_format_due_at(task.get('due_at'))}\n"
-            f"⚡ Приоритет: {_format_priority(task.get('priority'))}\n"
-            f"📌 Статус: {task['status']}"
-        )
         await message.answer(
-            task_text,
+            format_task(task),
             reply_markup=task_actions_kb(task["id"]),
             parse_mode="HTML",
         )

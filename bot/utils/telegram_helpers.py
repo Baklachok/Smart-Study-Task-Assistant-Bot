@@ -1,7 +1,8 @@
 import logging
-from typing import Optional
+from typing import Optional, Any
 from aiogram.types import Message, CallbackQuery, InaccessibleMessage
 
+from bot.keyboards.courses import make_inline_kb
 from bot.utils.auth import get_access_token
 
 logger = logging.getLogger(__name__)
@@ -45,3 +46,11 @@ async def require_auth(obj: Message | CallbackQuery) -> str | None:
             await obj.answer("Сначала /start", show_alert=True)
         return None
     return token
+
+
+async def send_message_with_kb(
+    message_obj: Any, text: str, buttons: list[dict[str, str]] | None = None
+) -> None:
+    """Отправка сообщения с опциональными кнопками"""
+    kb = make_inline_kb(buttons) if buttons else None
+    await message_obj.answer(text, reply_markup=kb, parse_mode="HTML")

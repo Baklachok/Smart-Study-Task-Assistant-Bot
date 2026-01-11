@@ -2,69 +2,98 @@ from typing import Any
 
 from aiogram import Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
     CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
 )
 
 from bot.config import settings
+from bot.keyboards.topics import topic_kb
+from bot.states.topics import AddTopicStates
 from bot.utils.auth import get_access_token
 from bot.utils.http import api_client
-from bot.utils.parsers import parse_add_topic
+from bot.utils.telegram_helpers import require_auth
 
 router = Router()
 
 
-async def _require_token(message_or_query: Any) -> str | None:
-    token = get_access_token(message_or_query)
-    if not token:
-        await getattr(message_or_query, "answer")("Сначала /start")
-    return token
+def auth_headers(token: str | None) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 @router.message(Command("add_topic"))  # type: ignore
-async def add_topic_handler(message: Message) -> None:
-    """Добавление новой темы"""
-    if not message.text:
-        await message.answer("Использование:\n/add_topic Title | course_id")
+async def add_topic_start(message: Message, state: FSMContext) -> None:
+    if not await require_auth(message):
         return
 
-    token = await _require_token(message)
-    if not token:
+    await state.clear()
+    await message.answer("Введите название темы:")
+    await state.set_state(AddTopicStates.waiting_for_title)
+
+
+@router.message(AddTopicStates.waiting_for_title)  # type: ignore
+async def add_topic_title(message: Message, state: FSMContext) -> None:
+    title = (message.text or "").strip()
+
+    if not title:
+        await message.answer("Название не может быть пустым. Попробуйте ещё раз:")
         return
 
-    try:
-        title, course_id = parse_add_topic(message.text)
-    except (ValueError, IndexError):
-        await message.answer("Использование:\n/add_topic Title | course_id")
+    await state.update_data(title=title)
+    await message.answer("Введите UID курса:")
+    await state.set_state(AddTopicStates.waiting_for_course)
+
+
+@router.message(AddTopicStates.waiting_for_course)  # type: ignore
+async def add_topic_course(message: Message, state: FSMContext) -> None:
+    course_uid = (message.text or "").strip()
+
+    if not course_uid:
+        await message.answer("UID курса не может быть пустым")
         return
 
-    payload = {"title": title, "course": course_id}
-    headers = {"Authorization": f"Bearer {token}"}
+    await state.update_data(course=course_uid)
+    await create_topic(message, state)
+
+
+async def create_topic(
+    target: Message | CallbackQuery,
+    state: FSMContext,
+) -> None:
+    data = await state.get_data()
+    token = get_access_token(target)
+
+    payload = {
+        "title": data["title"],
+        "course": data["course"],
+    }
 
     async with api_client() as client:
         response = await client.post(
-            f"{settings.API_URL}/topics/", headers=headers, json=payload
+            f"{settings.API_URL}/topics/",
+            headers=auth_headers(token),
+            json=payload,
         )
 
     if response.status_code == 201:
-        await message.answer(f"📘 Тема «{title}» добавлена")
+        await target.answer(f"📘 Тема «{data['title']}» успешно создана")
     else:
-        await message.answer(f"Ошибка: {response.text}")
+        await target.answer(f"❌ Ошибка создания темы:\n{response.text}")
+
+    await state.clear()
 
 
 @router.message(Command("topics"))  # type: ignore
-async def list_topics_handler(message: Message) -> None:
-    """Вывод списка тем с кнопками для просмотра задач"""
-    token = await _require_token(message)
+async def list_topics(message: Message) -> None:
+    token = await require_auth(message)
     if not token:
         return
 
     async with api_client() as client:
         response = await client.get(
-            f"{settings.API_URL}/topics/", headers={"Authorization": f"Bearer {token}"}
+            f"{settings.API_URL}/topics/",
+            headers=auth_headers(token),
         )
 
     if response.status_code != 200:
@@ -77,39 +106,33 @@ async def list_topics_handler(message: Message) -> None:
         return
 
     for topic in topics:
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📘 Показать задачи",
-                        callback_data=f"topic_tasks:{topic['id']}",
-                    )
-                ]
-            ]
+        await message.answer(
+            format_topic(topic),
+            reply_markup=topic_kb(topic["id"]),
+            parse_mode="HTML",
         )
 
-        topic_text = (
-            f"📘 <b>{topic['title']}</b>\n"
-            f"📚 Курс: {topic.get('course_name', 'Без курса')}\n"
-            f"✅ Прогресс: {topic.get('progress', 0)}%"
-        )
 
-        await message.answer(topic_text, reply_markup=kb, parse_mode="HTML")
+def format_topic(topic: dict[str, Any]) -> str:
+    return (
+        f"📘 <b>{topic['title']}</b>\n"
+        f"📚 Курс: {topic.get('course_name', 'Без курса')}\n"
+        f"✅ Прогресс: {topic.get('progress', 0)}%"
+    )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("topic_tasks:"))  # type: ignore
 async def show_topic_tasks(query: CallbackQuery) -> None:
-    """Показать задачи конкретной темы"""
-    topic_id = query.data.split(":")[1]
+    topic_id = query.data.split(":", 1)[1]
 
-    token = await _require_token(query)
+    token = await require_auth(query)
     if not token:
         return
 
     async with api_client() as client:
         response = await client.get(
             f"{settings.API_URL}/tasks/",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=auth_headers(token),
             params={"topic": topic_id},
         )
 
@@ -123,11 +146,14 @@ async def show_topic_tasks(query: CallbackQuery) -> None:
         return
 
     for task in tasks:
-        task_text = (
-            f"📝 <b>{task['title']}</b>\n"
-            f"📄 {task.get('description') or '—'}\n"
-            f"⏰ Дедлайн: {task.get('due_at') or '—'}\n"
-            f"⚡ Приоритет: {task.get('priority') or '—'}\n"
-            f"📌 Статус: {task.get('status') or '—'}"
-        )
-        await query.message.answer(task_text, parse_mode="HTML")
+        await query.message.answer(format_task(task), parse_mode="HTML")
+
+
+def format_task(task: dict[str, Any]) -> str:
+    return (
+        f"📝 <b>{task['title']}</b>\n"
+        f"📄 {task.get('description') or '—'}\n"
+        f"⏰ Дедлайн: {task.get('due_at') or '—'}\n"
+        f"⚡ Приоритет: {task.get('priority') or '—'}\n"
+        f"📌 Статус: {task.get('status') or '—'}"
+    )

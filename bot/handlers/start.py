@@ -25,7 +25,7 @@ async def start_handler(message: Message) -> None:
         "username": message.from_user.username,
         "first_name": message.from_user.first_name,
         "language": message.from_user.language_code or "en",
-        "timezone": "UTC",
+        "timezone": "Europe/Moscow",
     }
 
     async with api_client() as client:

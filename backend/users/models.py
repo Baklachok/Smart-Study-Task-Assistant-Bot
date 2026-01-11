@@ -49,9 +49,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     first_name: ClassVar[models.CharField] = models.CharField(
         max_length=255, blank=True
     )
-    language: ClassVar[models.CharField] = models.CharField(max_length=5, default="en")
+    language: ClassVar[models.CharField] = models.CharField(max_length=5, default="ru")
     timezone: ClassVar[models.CharField] = models.CharField(
-        max_length=50, default="UTC"
+        max_length=50, default="Europe/Moscow"
     )
     is_active: models.BooleanField = models.BooleanField(default=True)
     is_staff: models.BooleanField = models.BooleanField(default=False)

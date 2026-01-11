@@ -9,7 +9,7 @@ LOGGING = {
             "format": (
                 "[{levelname}] {asctime} "
                 "user_id={user_id} email={email} tg={telegram_id} "
-                "{name}: {message}"
+                "{name}: {message} | extra={extra}"
             ),
             "style": "{",
         },
@@ -23,6 +23,6 @@ LOGGING = {
     },
     "root": {
         "handlers": ["console"],
-        "level": "INFO",
+        "level": "DEBUG",
     },
 }
