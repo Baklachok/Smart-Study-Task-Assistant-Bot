@@ -1,5 +1,8 @@
 version: "3.9"
 
+volumes:
+  postgres_data:
+
 services:
   postgres:
     image: postgres:15
@@ -48,6 +51,8 @@ services:
     depends_on:
       - redis
       - backend
+    environment:
+      PYTHONPATH: /app
 
   celery_beat:
     build: .
@@ -61,6 +66,8 @@ services:
     depends_on:
       - redis
       - backend
+    environment:
+      PYTHONPATH: /app
 
   flower:
     build: .
@@ -76,6 +83,8 @@ services:
       - celery_worker
     ports:
       - "5555:5555"
+    environment:
+      PYTHONPATH: /app
 
   bot:
     build: .
@@ -88,6 +97,3 @@ services:
     depends_on:
       - backend
       - redis
-
-volumes:
-  postgres_data:

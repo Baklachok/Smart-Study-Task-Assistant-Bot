@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any
 
 PRIORITY_EMOJI: dict[str, str] = {
     "low": "🟢 low",
@@ -24,21 +24,34 @@ def format_due_at(due_at: str | None) -> str:
         return due_at
 
 
-def format_task(task: Mapping[str, Any]) -> str:
-    """
-    Форматирование задачи в строку для Telegram
-    task: словарь с ключами 'title', 'description', 'due_at', 'priority', 'status'
-    """
-    title = task.get("title", "—")
-    description = task.get("description") or "—"
-    due_at = format_due_at(task.get("due_at"))
-    priority = format_priority(task.get("priority"))
-    status = task.get("status", "—")
+def _get(obj: Any, key: str) -> Any:
+    """Достаёт поле и из dict, и из объекта"""
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
+
+
+def format_task(task: Any) -> str:
+    title = _get(task, "title") or "—"
+    description = _get(task, "description") or "—"
+    priority = _get(task, "priority")
+    status = _get(task, "status") or "—"
+
+    topic_obj = _get(task, "topic") or "—"
+    if isinstance(topic_obj, dict):
+        topic = topic_obj.get("title", "—")
+    else:
+        topic = topic_obj
+
+    due_at = _get(task, "due_at")
+    if hasattr(due_at, "isoformat"):
+        due_at = due_at.isoformat()
 
     return (
         f"📝 <b>{title}</b>\n"
         f"📄 {description}\n"
-        f"⏰ Дедлайн: {due_at}\n"
-        f"⚡ Приоритет: {priority}\n"
+        f"⏰ Дедлайн: {format_due_at(due_at)}\n"
+        f"⚡ Приоритет: {format_priority(priority)}\n"
+        f"📘 Тема: {topic}\n"
         f"📌 Статус: {status}"
     )

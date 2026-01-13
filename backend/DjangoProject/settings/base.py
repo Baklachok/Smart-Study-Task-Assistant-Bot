@@ -94,3 +94,9 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+CELERY_BEAT_SCHEDULE = {
+    "send-task-reminders": {
+        "task": "tasks.tasks.send_task_reminders",
+        "schedule": 60.0,
+    },
+}

@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from aiogram import Router
@@ -9,11 +10,14 @@ from aiogram.types import (
 )
 
 from bot.config import settings
-from bot.keyboards.topics import topic_kb
+from bot.keyboards.topics import topic_kb, courses_kb
+from bot.services.courses import fetch_courses
 from bot.states.topics import AddTopicStates
 from bot.utils.auth import get_access_token
 from bot.utils.http import api_client
 from bot.utils.telegram_helpers import require_auth
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -34,27 +38,40 @@ async def add_topic_start(message: Message, state: FSMContext) -> None:
 
 @router.message(AddTopicStates.waiting_for_title)  # type: ignore
 async def add_topic_title(message: Message, state: FSMContext) -> None:
+    """Получение названия темы от пользователя"""
     title = (message.text or "").strip()
+    user_id = message.from_user.id
 
     if not title:
         await message.answer("Название не может быть пустым. Попробуйте ещё раз:")
+        logger.warning("User %s sent empty title", user_id)
         return
 
     await state.update_data(title=title)
-    await message.answer("Введите UID курса:")
+    logger.info("User %s entered title: %r", user_id, title)
+
+    token = await require_auth(message)
+    if not token:
+        logger.warning("User %s failed authentication", user_id)
+        return
+    logger.debug("User %s authenticated successfully", user_id)
+
+    courses = await fetch_courses(token)
+    logger.info("Fetched %d courses for user %s", len(courses), user_id)
+
+    await message.answer(
+        "Выберите курс топика:",
+        reply_markup=courses_kb(courses),
+    )
     await state.set_state(AddTopicStates.waiting_for_course)
 
 
-@router.message(AddTopicStates.waiting_for_course)  # type: ignore
-async def add_topic_course(message: Message, state: FSMContext) -> None:
-    course_uid = (message.text or "").strip()
-
-    if not course_uid:
-        await message.answer("UID курса не может быть пустым")
-        return
+@router.callback_query(AddTopicStates.waiting_for_course)  # type: ignore
+async def add_topic_course(callback: CallbackQuery, state: FSMContext) -> None:
+    course_uid = callback.data.replace("course:", "")
 
     await state.update_data(course=course_uid)
-    await create_topic(message, state)
+    await create_topic(callback, state)
 
 
 async def create_topic(

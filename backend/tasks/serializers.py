@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Optional, cast
 
 from django.utils import timezone
@@ -7,6 +8,8 @@ from .models import Task
 from topics.models import Topic
 
 from users.utils.timezone import get_user_timezone
+
+logger = logging.getLogger(__name__)
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -64,11 +67,12 @@ class TaskSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data: dict[str, Any]) -> Task:
-        topic_id: Optional[str] = validated_data.pop("topic_id", None)
-        task = Task.objects.create(**validated_data)
+        topic_id = validated_data.pop("topic_id", None)
+
         if topic_id is not None:
-            setattr(task, "topic_id", topic_id)
-            task.save(update_fields=["topic"])
+            validated_data["topic_id"] = topic_id
+
+        task = Task.objects.create(**validated_data)
         return task
 
     def update(self, instance: Task, validated_data: dict[str, Any]) -> Task:
@@ -91,4 +95,18 @@ class TaskSerializer(serializers.ModelSerializer):
         if timezone.is_naive(value):
             value = user_tz.localize(value)
 
-        return value.astimezone(dt_timezone.utc)
+        value_utc = value.astimezone(dt_timezone.utc)
+
+        now_utc = timezone.now()
+        if value_utc < now_utc:
+            logger.warning(
+                "Попытка установить дедлайн в прошлом",
+                extra={
+                    "user_id": getattr(user, "id", None),
+                    "attempted_due_at": value_utc.isoformat(),
+                    "now_utc": now_utc.isoformat(),
+                },
+            )
+            raise serializers.ValidationError("Нельзя установить дедлайн в прошлом.")
+
+        return value_utc
