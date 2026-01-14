@@ -18,7 +18,6 @@
 │  Auth (Telegram)          │
 │  Tasks / Courses / Topics │
 │  Reminders                │
-│  AI Service (optional)    │
 │                           │
 └─────┬─────────────────────┘
       │
@@ -46,7 +45,6 @@
 - Задачи (`Task`)
 - Курсы (`Course`) и темы (`Topic`)
 - Напоминания (`Reminder`)
-- AI сервис (опционально)
 
 **Принципы:**
 - API проектируется независимо от Telegram

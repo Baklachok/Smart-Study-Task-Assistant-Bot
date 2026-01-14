@@ -2,151 +2,193 @@ import logging
 from datetime import datetime
 
 from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
+
 from ..formatters.tasks import format_task
 from ..keyboards import task_actions_kb
-from ..keyboards.tasks import priority_kb, topics_kb, skip_kb, skip_description_kb
+from ..keyboards.tasks import priority_kb, skip_kb, skip_description_kb
 from ..services.tasks import create_task, fetch_tasks
 from ..services.topics import fetch_topics
 from ..states.tasks import AddTaskStates
-from ..utils.http import task_api_request
-from ..utils.telegram_helpers import extract_task_id, safe_edit_text, require_auth
+from ..utils.fsm_helpers import (
+    CANCEL_TEXT,
+    handle_cancel_message,
+    handle_cancel_callback,
+    cancel_kb,
+    perform_task_action,
+)
+from ..utils.telegram_helpers import (
+    extract_task_id,
+    require_auth,
+    send_message_with_kb,
+)
 
 logger = logging.getLogger(__name__)
-
 router = Router()
+
+CANCEL_BUTTON = {"text": "❌ Отмена", "callback_data": "cancel"}
+
+
+@router.message(F.text == CANCEL_TEXT)  # type: ignore
+async def cancel_text_step(message: Message, state: FSMContext) -> None:
+    logger.info("Cancel via text by user %s", message.from_user.id)
+    await handle_cancel_message(message, state)
+
+
+@router.callback_query(F.data == "cancel")  # type: ignore
+async def cancel_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    logger.info("Cancel via callback by user %s", callback.from_user.id)
+    await handle_cancel_callback(callback, state)
 
 
 async def prompt_topics(target: Message | CallbackQuery, state: FSMContext) -> None:
-    """Показываем пользователю список топиков для выбора"""
+    logger.debug("Prompting topics")
+
     token = await require_auth(target)
     if not token:
         return
 
     topics = await fetch_topics(token)
-    await target.answer(
-        "Выберите топик задачи (или нажмите «Нет»):", reply_markup=topics_kb(topics)
+    logger.debug("Fetched %d topics", len(topics))
+
+    buttons = [
+        {"text": t["title"], "callback_data": f"topic:{t['id']}"} for t in topics
+    ] + [
+        {"text": "Нет", "callback_data": "topic:none"},
+        CANCEL_BUTTON,
+    ]
+
+    await send_message_with_kb(
+        target,
+        "Выберите топик задачи (или нажмите «Нет»):",
+        buttons=buttons,
     )
+
     await state.set_state(AddTaskStates.waiting_for_topic)
 
 
 async def create_task_from_state(
-    target: Message | CallbackQuery, state: FSMContext
+    target: Message | CallbackQuery,
+    state: FSMContext,
 ) -> None:
-    """Создание задачи через API на основе данных FSM"""
     token = await require_auth(target)
     if not token:
         return
 
     data = await state.get_data()
-    topic_id = data.get("topic_id")
+    logger.debug("FSM data for task creation: %s", data)
 
     payload = {
         "title": data["title"],
         "due_at": data.get("due_at"),
         "priority": data.get("priority"),
         "description": data.get("description"),
-        **({"topic_id": topic_id} if topic_id else {}),
+        **({"topic_id": data["topic_id"]} if data.get("topic_id") else {}),
     }
 
-    logger.info(
-        "Creating task via API: payload=%s, user_id=%s",
-        payload,
-        getattr(target.from_user, "id", None),
-    )
-
+    logger.info("Creating task: %s", payload)
     response = await create_task(token, payload)
+
     if response.status_code == 201:
-        await safe_edit_text(target.message, f"Задача «{data['title']}» создана ✅")
-    else:
-        await safe_edit_text(target.message, "Ошибка создания задачи ❌")
-
-    await state.clear()
-    await target.answer()
-
-
-async def handle_task_action(
-    callback: CallbackQuery, task_id: str | None, action: str, success_text: str
-) -> None:
-    access_token = await require_auth(callback)
-    if not access_token or not task_id:
-        return
-
-    method, payload = {
-        "delete": ("delete", None),
-        "done": ("patch", {"status": "done"}),
-    }.get(action, (None, None))
-
-    if method is None:
-        logger.error("Unknown action=%s", action)
-        await callback.answer("Неизвестное действие", show_alert=True)
-        return
-
-    response = await task_api_request(task_id, method, access_token, payload)
-
-    if (action == "done" and response.status_code == 200) or (
-        action == "delete" and response.status_code == 204
-    ):
-        logger.info("Task %s successfully task_id=%s", action, task_id)
-        await safe_edit_text(callback.message, success_text)
-        await callback.answer()
+        await send_message_with_kb(
+            target,
+            f"Задача «{data['title']}» создана ✅",
+        )
     else:
         logger.error(
-            "Failed task %s task_id=%s status=%s", action, task_id, response.status_code
+            "Task creation failed: %s %s",
+            response.status_code,
+            response.text,
         )
-        await callback.answer("Ошибка ❌", show_alert=True)
+        await send_message_with_kb(target, "Ошибка создания задачи ❌")
+
+    await state.clear()
 
 
 @router.message(Command("add_task"))  # type: ignore
 async def add_task_handler(message: Message, state: FSMContext) -> None:
-    access_token = await require_auth(message)
-    if not access_token:
+    logger.info("User %s started add_task", message.from_user.id)
+
+    if not await require_auth(message):
         return
 
-    await message.answer("Введите название задачи:")
+    await state.clear()
+    await message.answer("Введите название задачи:", reply_markup=cancel_kb)
     await state.set_state(AddTaskStates.waiting_for_title)
 
 
 @router.message(AddTaskStates.waiting_for_title)  # type: ignore
 async def add_task_title(message: Message, state: FSMContext) -> None:
     title = (message.text or "").strip()
+
     if not title:
-        await message.answer("Название не может быть пустым. Введите название:")
+        await message.answer("Название не может быть пустым")
         return
+
     await state.update_data(title=title)
 
-    await message.answer(
-        "Введите дедлайн в формате YYYY-MM-DD HH:MM или нажмите 'Пропустить':",
-        reply_markup=skip_kb,
+    buttons = [
+        {"text": btn.text, "callback_data": btn.callback_data}
+        for row in skip_kb.inline_keyboard
+        for btn in row
+    ] + [CANCEL_BUTTON]
+
+    await send_message_with_kb(
+        message,
+        "Введите дедлайн (YYYY-MM-DD HH:MM) или нажмите «Пропустить»:",
+        buttons=buttons,
     )
+
     await state.set_state(AddTaskStates.waiting_for_due_at)
 
 
 @router.message(AddTaskStates.waiting_for_due_at)  # type: ignore
 async def add_task_due_at(message: Message, state: FSMContext) -> None:
-    due_at_text = (message.text or "").strip()
-    due_at_iso: str | None = None
+    due_text = (message.text or "").strip()
+    due_iso = None
 
-    if due_at_text.lower() != "пропустить":
+    if due_text.lower() != "пропустить":
         try:
-            due_at_iso = datetime.strptime(due_at_text, "%Y-%m-%d %H:%M").isoformat()
+            due_iso = datetime.strptime(due_text, "%Y-%m-%d %H:%M").isoformat()
         except ValueError:
-            await message.answer(
-                "Неверный формат даты. Попробуйте ещё раз или нажмите 'Пропустить'."
-            )
+            await message.answer("Неверный формат даты")
             return
 
-    await state.update_data(due_at=due_at_iso)
-    await message.answer("Выберите приоритет:", reply_markup=priority_kb())
+    await state.update_data(due_at=due_iso)
+
+    buttons = [
+        {"text": btn.text, "callback_data": btn.callback_data}
+        for row in priority_kb().inline_keyboard
+        for btn in row
+    ] + [CANCEL_BUTTON]
+
+    await send_message_with_kb(
+        message,
+        "Выберите приоритет:",
+        buttons=buttons,
+    )
+
     await state.set_state(AddTaskStates.waiting_for_priority)
 
 
 @router.callback_query(AddTaskStates.waiting_for_due_at, F.data == "skip_due_at")  # type: ignore
 async def skip_due_at_callback(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(due_at=None)
-    await callback.message.answer("Выберите приоритет:", reply_markup=priority_kb())
+
+    buttons = [
+        {"text": btn.text, "callback_data": btn.callback_data}
+        for row in priority_kb().inline_keyboard
+        for btn in row
+    ] + [CANCEL_BUTTON]
+
+    await send_message_with_kb(
+        callback,
+        "Выберите приоритет:",
+        buttons=buttons,
+    )
+
     await state.set_state(AddTaskStates.waiting_for_priority)
     await callback.answer()
 
@@ -154,10 +196,19 @@ async def skip_due_at_callback(callback: CallbackQuery, state: FSMContext) -> No
 @router.callback_query(AddTaskStates.waiting_for_priority)  # type: ignore
 async def add_task_priority(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(priority=callback.data)
-    await callback.message.answer(
-        "Введите описание задачи или нажмите 'Пропустить':",
-        reply_markup=skip_description_kb,
+
+    buttons = [
+        {"text": btn.text, "callback_data": btn.callback_data}
+        for row in skip_description_kb.inline_keyboard
+        for btn in row
+    ] + [CANCEL_BUTTON]
+
+    await send_message_with_kb(
+        callback,
+        "Введите описание или нажмите «Пропустить»:",
+        buttons=buttons,
     )
+
     await state.set_state(AddTaskStates.waiting_for_description)
     await callback.answer()
 
@@ -169,7 +220,8 @@ async def add_task_description(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(
-    AddTaskStates.waiting_for_description, F.data == "skip_description"
+    AddTaskStates.waiting_for_description,
+    F.data == "skip_description",
 )  # type: ignore
 async def skip_description_callback(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(description=None)
@@ -179,53 +231,48 @@ async def skip_description_callback(callback: CallbackQuery, state: FSMContext) 
 
 @router.callback_query(AddTaskStates.waiting_for_topic)  # type: ignore
 async def add_task_topic(callback: CallbackQuery, state: FSMContext) -> None:
-    topic_id = (
-        None if callback.data == "topic:none" else callback.data.replace("topic:", "")
-    )
+    topic_id = None if callback.data == "topic:none" else callback.data[6:]
     await state.update_data(topic_id=topic_id)
     await create_task_from_state(callback, state)
 
 
 @router.message(Command("tasks"))  # type: ignore
 async def list_tasks_handler(message: Message) -> None:
-    access_token = await require_auth(message)
-    if not access_token:
+    token = await require_auth(message)
+    if not token:
         return
 
-    filter_type = (
-        "today"
-        if "today" in (message.text or "").lower()
-        else "week"
-        if "week" in (message.text or "").lower()
-        else None
-    )
-
-    response = await fetch_tasks(access_token, filter_type)
-
+    response = await fetch_tasks(token, None)
     if response.status_code != 200:
-        await message.answer("Ошибка загрузки задач ❌")
+        await send_message_with_kb(message, "Ошибка загрузки задач ❌")
         return
 
     tasks = response.json().get("results", [])
     if not tasks:
-        await message.answer("Нет задач 😎")
+        await send_message_with_kb(message, "Нет задач 😎")
         return
 
     for task in tasks:
-        await message.answer(
+        buttons = [
+            {"text": btn.text, "callback_data": btn.callback_data}
+            for row in task_actions_kb(task["id"]).inline_keyboard
+            for btn in row
+        ]
+
+        await send_message_with_kb(
+            message,
             format_task(task),
-            reply_markup=task_actions_kb(task["id"]),
-            parse_mode="HTML",
+            buttons=buttons,
         )
 
 
 @router.callback_query(F.data.startswith("task_done:"))  # type: ignore
 async def task_done_callback(callback: CallbackQuery) -> None:
     task_id = extract_task_id(callback.data, "task_done:")
-    await handle_task_action(callback, task_id, "done", "✅ Задача завершена")
+    await perform_task_action(callback, task_id, "done", "✅ Задача завершена")
 
 
 @router.callback_query(F.data.startswith("task_delete:"))  # type: ignore
 async def task_delete_callback(callback: CallbackQuery) -> None:
     task_id = extract_task_id(callback.data, "task_delete:")
-    await handle_task_action(callback, task_id, "delete", "❌ Задача удалена")
+    await perform_task_action(callback, task_id, "delete", "❌ Задача удалена")

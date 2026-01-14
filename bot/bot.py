@@ -8,7 +8,7 @@ from bot.commands import COMMANDS
 from bot.config import settings
 from bot.handlers import tasks, courses, help, topics, unknown, start
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
