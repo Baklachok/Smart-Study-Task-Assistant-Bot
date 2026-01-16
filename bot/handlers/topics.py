@@ -13,7 +13,6 @@ from bot.formatters.topics import format_topic
 from bot.keyboards.topics import topic_kb, courses_kb
 from bot.services.courses import fetch_courses
 from bot.states.topics import AddTopicStates
-from bot.utils.auth import get_access_token
 from bot.utils.fsm_helpers import (
     CANCEL_TEXT,
     handle_cancel_message,
@@ -22,7 +21,7 @@ from bot.utils.fsm_helpers import (
     add_cancel_inline,
 )
 from bot.utils.http import post_entity, get_entities
-from bot.utils.telegram_helpers import require_auth
+from bot.utils.telegram_helpers import require_auth, send_message_with_kb
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -70,10 +69,15 @@ async def add_topic_title(message: Message, state: FSMContext) -> None:
 
     courses = await fetch_courses(token)
     logger.info("Fetched %d courses for user %s", len(courses), user_id)
+    if not courses:
+        await message.answer("Нет доступных курсов")
+        return
 
-    await message.answer(
+    kb = add_cancel_inline(courses_kb(courses))
+    await send_message_with_kb(
+        message,
         "Выберите курс топика:",
-        reply_markup=add_cancel_inline(courses_kb(courses)),
+        buttons=kb,
     )
     await state.set_state(AddTopicStates.waiting_for_course)
 
@@ -84,25 +88,34 @@ async def add_topic_course(callback: CallbackQuery, state: FSMContext) -> None:
         await handle_cancel_callback(callback, state)
         return
 
+    if not callback.data.startswith("course:"):
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+
     course_id = callback.data.split("course:")[-1]
     await state.update_data(course=course_id)
     await create_topic(callback, state)
+    await callback.answer()
 
 
-async def create_topic(target: Message | CallbackQuery, state: FSMContext) -> None:
+async def create_topic(target: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    token = get_access_token(target)
+    token = await require_auth(target)
+    if not token:
+        return
 
     payload = {"title": data["title"], "course": data["course"]}
 
     status, _ = await post_entity("topics", token, payload)
 
     if status == 201:
-        await target.answer(f"📘 Тема «{data['title']}» успешно создана")
+        await target.message.answer(f"📘 Тема «{data['title']}» успешно создана")
     else:
-        await target.answer("❌ Ошибка создания темы")
+        await target.message.answer("❌ Ошибка создания темы")
 
     await state.clear()
+    await target.answer()
 
 
 @router.message(Command("topics"))  # type: ignore
@@ -121,28 +134,36 @@ async def list_topics(message: Message) -> None:
         return
 
     for topic in topics:
-        await message.answer(
+        kb = topic_kb(topic["id"])
+        await send_message_with_kb(
+            message,
             format_topic(topic),
-            reply_markup=topic_kb(topic["id"]),
-            parse_mode="HTML",
+            buttons=kb,
         )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("topic_tasks:"))  # type: ignore
-async def show_topic_tasks(query: CallbackQuery) -> None:
-    topic_id = query.data.split(":", 1)[1]
-    token = await require_auth(query)
+@router.callback_query(F.data.startswith("topic_tasks:"))  # type: ignore
+async def show_topic_tasks(callback: CallbackQuery) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    topic_id = callback.data.removeprefix("topic_tasks:")
+
+    token = await require_auth(callback)
     if not token:
         return
 
     status, tasks = await get_entities("tasks", token, params={"topic": topic_id})
     if status != 200:
-        await query.message.answer("Ошибка загрузки задач ❌")
+        await callback.message.answer("Ошибка загрузки задач ❌")
+        await callback.answer()
         return
 
     if not tasks:
-        await query.message.answer("Нет задач в этой теме 😎")
+        await callback.message.answer("Нет задач в этой теме 😎")
+        await callback.answer()
         return
 
     for task in tasks:
-        await query.message.answer(format_task(task), parse_mode="HTML")
+        await callback.message.answer(format_task(task), parse_mode="HTML")
+
+    await callback.answer()

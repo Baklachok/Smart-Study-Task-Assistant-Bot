@@ -27,9 +27,9 @@ def priority_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Low", callback_data="low"),
-                InlineKeyboardButton(text="Medium", callback_data="medium"),
-                InlineKeyboardButton(text="High", callback_data="high"),
+                InlineKeyboardButton(text="Low", callback_data="priority:low"),
+                InlineKeyboardButton(text="Medium", callback_data="priority:medium"),
+                InlineKeyboardButton(text="High", callback_data="priority:high"),
             ]
         ]
     )

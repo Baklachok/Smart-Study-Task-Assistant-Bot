@@ -13,9 +13,12 @@ from bot.utils.fsm_helpers import (
     handle_cancel_message,
     handle_cancel_callback,
     cancel_kb,
-    add_cancel_inline,
 )
-from bot.utils.telegram_helpers import require_auth, send_message_with_kb
+from bot.utils.telegram_helpers import (
+    require_auth,
+    send_message_with_kb,
+    normalize_buttons,
+)
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -86,9 +89,6 @@ async def add_course_description(message: Message, state: FSMContext) -> None:
     await state.clear()
 
 
-# ====================
-# Просмотр курсов
-# ====================
 def build_course_buttons(course_id: str) -> list[dict[str, str]]:
     """Создание кнопок для курса"""
     return [{"text": "📘 Показать темы", "callback_data": f"course_topics:{course_id}"}]
@@ -96,10 +96,7 @@ def build_course_buttons(course_id: str) -> list[dict[str, str]]:
 
 def build_topic_buttons(topic_id: str) -> list[dict[str, str]]:
     """Создание кнопок для темы"""
-    return [
-        {"text": "📝 Показать задачи", "callback_data": f"topic_tasks:{topic_id}"},
-        {"text": "❌ Отмена", "callback_data": "cancel"},
-    ]
+    return [{"text": "📝 Показать задачи", "callback_data": f"topic_tasks:{topic_id}"}]
 
 
 @router.message(Command("courses"))  # type: ignore
@@ -115,27 +112,26 @@ async def list_courses_handler(message: Message) -> None:
         return
 
     for course in courses:
-        buttons = build_course_buttons(course["id"])
-        final_kb = add_cancel_inline(buttons)
+        buttons = normalize_buttons(
+            [
+                (btn["text"], btn["callback_data"])
+                for btn in build_course_buttons(course["id"])
+            ]
+        )
         await send_message_with_kb(
             message,
             f"📚 <b>{course['title']}</b>\n📄 {course.get('description', '—')}",
-            buttons=final_kb,
+            buttons=buttons,
         )
 
 
-# ====================
-# Просмотр тем курса
-# ====================
 @router.callback_query(lambda c: c.data and c.data.startswith("course_topics:"))  # type: ignore
 async def show_course_topics(query: CallbackQuery) -> None:
     """Показываем темы конкретного курса"""
-    if query.data == "cancel":
-        await query.message.edit_text("Действие отменено ❌")
-        await query.answer()
-        return
+    await query.message.edit_reply_markup(reply_markup=None)
 
-    course_id = query.data.split(":")[1]
+    course_id = query.data.removeprefix("course_topics:")
+
     token = await require_auth(query)
     if not token:
         return
@@ -143,12 +139,20 @@ async def show_course_topics(query: CallbackQuery) -> None:
     topics = await fetch_topics(token, course_id)
     if not topics:
         await send_message_with_kb(query.message, "Нет тем в этом курсе 😎")
+        await query.answer()
         return
 
     for topic in topics:
-        buttons = build_topic_buttons(topic["id"])
+        buttons = normalize_buttons(
+            [
+                (btn["text"], btn["callback_data"])
+                for btn in build_topic_buttons(topic["id"])
+            ]
+        )
         await send_message_with_kb(
             query.message,
             f"📘 <b>{topic['title']}</b>\n✅ Прогресс: {topic.get('progress', 0)}%",
             buttons=buttons,
         )
+
+    await query.answer()

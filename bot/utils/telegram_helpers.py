@@ -105,9 +105,12 @@ def build_inline_kb(buttons: list[dict[str, str]]) -> InlineKeyboardMarkup:
 async def send_message_with_kb(
     target: Message | CallbackQuery,
     text: str,
-    buttons: list[dict[str, str]] | None = None,
+    buttons: list[dict[str, str]] | InlineKeyboardMarkup | None = None,
 ) -> None:
-    reply_markup = build_inline_kb(buttons) if buttons else None
+    if isinstance(buttons, list):
+        reply_markup = build_inline_kb(buttons)
+    else:
+        reply_markup = buttons
 
     if isinstance(target, Message):
         logger.debug(
@@ -125,3 +128,18 @@ async def send_message_with_kb(
         )
         await target.message.answer(text, reply_markup=reply_markup)
         await target.answer()
+
+
+def normalize_buttons(
+    buttons: list[tuple[str, str]] | list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """
+    Конвертирует список кортежей в список словарей с 'text' и 'callback_data'.
+    """
+    result = []
+    for btn in buttons:
+        if isinstance(btn, tuple):
+            result.append({"text": btn[0], "callback_data": btn[1]})
+        else:
+            result.append(btn)
+    return result

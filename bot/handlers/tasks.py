@@ -6,12 +6,12 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
+from .tasks_helpers import ask_due_at, ask_priority, ask_description, prompt_topics
 from ..formatters.tasks import format_task
 from ..keyboards import task_actions_kb
-from ..keyboards.tasks import priority_kb, skip_kb, skip_description_kb
 from ..services.tasks import create_task, fetch_tasks
-from ..services.topics import fetch_topics
 from ..states.tasks import AddTaskStates
+from ..utils.fsm_guard import guard_callback
 from ..utils.fsm_helpers import (
     CANCEL_TEXT,
     handle_cancel_message,
@@ -23,12 +23,11 @@ from ..utils.telegram_helpers import (
     extract_task_id,
     require_auth,
     send_message_with_kb,
+    normalize_buttons,
 )
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-CANCEL_BUTTON = {"text": "❌ Отмена", "callback_data": "cancel"}
 
 
 @router.message(F.text == CANCEL_TEXT)  # type: ignore
@@ -41,32 +40,6 @@ async def cancel_text_step(message: Message, state: FSMContext) -> None:
 async def cancel_callback(callback: CallbackQuery, state: FSMContext) -> None:
     logger.info("Cancel via callback by user %s", callback.from_user.id)
     await handle_cancel_callback(callback, state)
-
-
-async def prompt_topics(target: Message | CallbackQuery, state: FSMContext) -> None:
-    logger.debug("Prompting topics")
-
-    token = await require_auth(target)
-    if not token:
-        return
-
-    topics = await fetch_topics(token)
-    logger.debug("Fetched %d topics", len(topics))
-
-    buttons = [
-        {"text": t["title"], "callback_data": f"topic:{t['id']}"} for t in topics
-    ] + [
-        {"text": "Нет", "callback_data": "topic:none"},
-        CANCEL_BUTTON,
-    ]
-
-    await send_message_with_kb(
-        target,
-        "Выберите топик задачи (или нажмите «Нет»):",
-        buttons=buttons,
-    )
-
-    await state.set_state(AddTaskStates.waiting_for_topic)
 
 
 async def create_task_from_state(
@@ -122,93 +95,56 @@ async def add_task_handler(message: Message, state: FSMContext) -> None:
 @router.message(AddTaskStates.waiting_for_title)  # type: ignore
 async def add_task_title(message: Message, state: FSMContext) -> None:
     title = (message.text or "").strip()
-
     if not title:
-        await message.answer("Название не может быть пустым")
+        await message.answer("Название не может быть пустым", reply_markup=cancel_kb)
         return
 
     await state.update_data(title=title)
-
-    buttons = [
-        {"text": btn.text, "callback_data": btn.callback_data}
-        for row in skip_kb.inline_keyboard
-        for btn in row
-    ] + [CANCEL_BUTTON]
-
-    await send_message_with_kb(
-        message,
-        "Введите дедлайн (YYYY-MM-DD HH:MM) или нажмите «Пропустить»:",
-        buttons=buttons,
-    )
-
+    await ask_due_at(message)
     await state.set_state(AddTaskStates.waiting_for_due_at)
 
 
 @router.message(AddTaskStates.waiting_for_due_at)  # type: ignore
 async def add_task_due_at(message: Message, state: FSMContext) -> None:
     due_text = (message.text or "").strip()
-    due_iso = None
-
-    if due_text.lower() != "пропустить":
+    if due_text.lower() == "пропустить":
+        await state.update_data(due_at=None)
+    else:
         try:
             due_iso = datetime.strptime(due_text, "%Y-%m-%d %H:%M").isoformat()
+            await state.update_data(due_at=due_iso)
         except ValueError:
-            await message.answer("Неверный формат даты")
+            await message.answer(
+                "Неверный формат даты. Используйте: YYYY-MM-DD HH:MM\nИли нажмите «Пропустить» кнопкой 👇"
+            )
             return
 
-    await state.update_data(due_at=due_iso)
-
-    buttons = [
-        {"text": btn.text, "callback_data": btn.callback_data}
-        for row in priority_kb().inline_keyboard
-        for btn in row
-    ] + [CANCEL_BUTTON]
-
-    await send_message_with_kb(
-        message,
-        "Выберите приоритет:",
-        buttons=buttons,
-    )
-
+    await ask_priority(message)
     await state.set_state(AddTaskStates.waiting_for_priority)
 
 
-@router.callback_query(AddTaskStates.waiting_for_due_at, F.data == "skip_due_at")  # type: ignore
+@router.callback_query(AddTaskStates.waiting_for_due_at)  # type: ignore
 async def skip_due_at_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.data != "skip_due_at":
+        return
+
     await state.update_data(due_at=None)
-
-    buttons = [
-        {"text": btn.text, "callback_data": btn.callback_data}
-        for row in priority_kb().inline_keyboard
-        for btn in row
-    ] + [CANCEL_BUTTON]
-
-    await send_message_with_kb(
-        callback,
-        "Выберите приоритет:",
-        buttons=buttons,
-    )
-
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await ask_priority(callback)
     await state.set_state(AddTaskStates.waiting_for_priority)
     await callback.answer()
 
 
 @router.callback_query(AddTaskStates.waiting_for_priority)  # type: ignore
 async def add_task_priority(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(priority=callback.data)
+    if not await guard_callback(callback, state, {"priority:", "cancel"}):
+        return
 
-    buttons = [
-        {"text": btn.text, "callback_data": btn.callback_data}
-        for row in skip_description_kb.inline_keyboard
-        for btn in row
-    ] + [CANCEL_BUTTON]
+    await state.update_data(priority=callback.data.split(":", 1)[1])
 
-    await send_message_with_kb(
-        callback,
-        "Введите описание или нажмите «Пропустить»:",
-        buttons=buttons,
-    )
+    await callback.message.edit_reply_markup(reply_markup=None)
 
+    await ask_description(callback)
     await state.set_state(AddTaskStates.waiting_for_description)
     await callback.answer()
 
@@ -219,20 +155,26 @@ async def add_task_description(message: Message, state: FSMContext) -> None:
     await prompt_topics(message, state)
 
 
-@router.callback_query(
-    AddTaskStates.waiting_for_description,
-    F.data == "skip_description",
-)  # type: ignore
+@router.callback_query(AddTaskStates.waiting_for_description)  # type: ignore
 async def skip_description_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await guard_callback(callback, state, {"skip_description", "cancel"}):
+        return
+
     await state.update_data(description=None)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await prompt_topics(callback, state)
     await callback.answer()
 
 
 @router.callback_query(AddTaskStates.waiting_for_topic)  # type: ignore
 async def add_task_topic(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await guard_callback(callback, state, {"topic:", "cancel"}):
+        return
+
     topic_id = None if callback.data == "topic:none" else callback.data[6:]
     await state.update_data(topic_id=topic_id)
+
+    await callback.message.edit_reply_markup(reply_markup=None)
     await create_task_from_state(callback, state)
 
 
@@ -253,12 +195,13 @@ async def list_tasks_handler(message: Message) -> None:
         return
 
     for task in tasks:
-        buttons = [
-            {"text": btn.text, "callback_data": btn.callback_data}
-            for row in task_actions_kb(task["id"]).inline_keyboard
-            for btn in row
-        ]
-
+        buttons = normalize_buttons(
+            [
+                (btn.text, btn.callback_data)
+                for row in task_actions_kb(task["id"]).inline_keyboard
+                for btn in row
+            ]
+        )
         await send_message_with_kb(
             message,
             format_task(task),
