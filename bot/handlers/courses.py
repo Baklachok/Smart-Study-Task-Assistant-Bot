@@ -4,10 +4,12 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
+from httpx import Response
 
 from bot.services.courses import create_course, fetch_courses
 from bot.services.topics import fetch_topics
 from bot.states.courses import AddCourseStates
+from bot.utils.api_errors import format_api_errors
 from bot.utils.fsm_helpers import (
     CANCEL_TEXT,
     handle_cancel_message,
@@ -80,13 +82,28 @@ async def add_course_description(message: Message, state: FSMContext) -> None:
     if not token:
         return
 
-    success = await create_course(token, data["title"], data.get("description"))
-    if success:
-        await message.answer(f"📚 Курс «{data['title']}» успешно создан")
-    else:
-        await message.answer("❌ Ошибка создания курса")
+    response = await create_course(token, data["title"], data.get("description"))
+    await _handle_course_creation_response(message, response, data["title"])
 
     await state.clear()
+
+
+async def _handle_course_creation_response(
+    message: Message, response: Response, title: str
+) -> None:
+    """Обработка ответа API при создании курса"""
+    if response.status_code == 201:
+        await message.answer(f"📚 Курс «{title}» успешно создан")
+    elif response.status_code == 400:
+        errors = response.json()
+        await message.answer(
+            "❌ Не удалось создать курс:\n\n" + format_api_errors(errors)
+        )
+    else:
+        logger.error(
+            "Ошибка создания курса: %s %s", response.status_code, response.text
+        )
+        await message.answer("❌ Ошибка создания курса")
 
 
 def build_course_buttons(course_id: str) -> list[dict[str, str]]:
@@ -112,17 +129,22 @@ async def list_courses_handler(message: Message) -> None:
         return
 
     for course in courses:
-        buttons = normalize_buttons(
-            [
-                (btn["text"], btn["callback_data"])
-                for btn in build_course_buttons(course["id"])
-            ]
-        )
-        await send_message_with_kb(
-            message,
-            f"📚 <b>{course['title']}</b>\n📄 {course.get('description', '—')}",
-            buttons=buttons,
-        )
+        await _send_course(message, course)
+
+
+async def _send_course(message: Message, course: dict[str, str]) -> None:
+    """Отправка одного курса с кнопкой 'Показать темы'"""
+    buttons = normalize_buttons(
+        [
+            (btn["text"], btn["callback_data"])
+            for btn in build_course_buttons(course["id"])
+        ]
+    )
+    await send_message_with_kb(
+        message,
+        f"📚 <b>{course['title']}</b>\n📄 {course.get('description', '—')}",
+        buttons=buttons,
+    )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("course_topics:"))  # type: ignore
@@ -131,7 +153,6 @@ async def show_course_topics(query: CallbackQuery) -> None:
     await query.message.edit_reply_markup(reply_markup=None)
 
     course_id = query.data.removeprefix("course_topics:")
-
     token = await require_auth(query)
     if not token:
         return
@@ -143,16 +164,21 @@ async def show_course_topics(query: CallbackQuery) -> None:
         return
 
     for topic in topics:
-        buttons = normalize_buttons(
-            [
-                (btn["text"], btn["callback_data"])
-                for btn in build_topic_buttons(topic["id"])
-            ]
-        )
-        await send_message_with_kb(
-            query.message,
-            f"📘 <b>{topic['title']}</b>\n✅ Прогресс: {topic.get('progress', 0)}%",
-            buttons=buttons,
-        )
+        await _send_topic(query.message, topic)
 
     await query.answer()
+
+
+async def _send_topic(message: Message, topic: dict[str, str]) -> None:
+    """Отправка одной темы с кнопкой 'Показать задачи'"""
+    buttons = normalize_buttons(
+        [
+            (btn["text"], btn["callback_data"])
+            for btn in build_topic_buttons(topic["id"])
+        ]
+    )
+    await send_message_with_kb(
+        message,
+        f"📘 <b>{topic['title']}</b>\n✅ Прогресс: {topic.get('progress', 0)}%",
+        buttons=buttons,
+    )

@@ -1,5 +1,7 @@
 from typing import Any
 
+from httpx import Response
+
 from bot.config import settings
 from bot.utils.http import api_client
 
@@ -15,16 +17,19 @@ async def fetch_courses(token: str) -> Any:
     return resp.json().get("results", [])
 
 
-async def create_course(token: str, title: str, description: str | None) -> bool:
-    """Создаёт курс через API"""
+async def create_course(
+    token: str,
+    title: str,
+    description: str | None,
+) -> Response:
+    """Создаёт курс через API и возвращает response"""
     payload = {"title": title}
     if description:
         payload["description"] = description
 
     async with api_client() as client:
-        resp = await client.post(
+        return await client.post(
             f"{settings.API_URL}/courses/",
             headers={"Authorization": f"Bearer {token}"},
             json=payload,
         )
-    return bool(resp.status_code == 201)

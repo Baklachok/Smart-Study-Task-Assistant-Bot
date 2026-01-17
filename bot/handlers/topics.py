@@ -13,6 +13,7 @@ from bot.formatters.topics import format_topic
 from bot.keyboards.topics import topic_kb, courses_kb
 from bot.services.courses import fetch_courses
 from bot.states.topics import AddTopicStates
+from bot.utils.api_errors import format_api_errors
 from bot.utils.fsm_helpers import (
     CANCEL_TEXT,
     handle_cancel_message,
@@ -59,9 +60,6 @@ async def add_topic_title(message: Message, state: FSMContext) -> None:
         logger.warning("User %s sent empty title", user_id)
         return
 
-    await state.update_data(title=title)
-    logger.info("User %s entered title: %r", user_id, title)
-
     token = await require_auth(message)
     if not token:
         logger.warning("User %s failed authentication", user_id)
@@ -72,6 +70,9 @@ async def add_topic_title(message: Message, state: FSMContext) -> None:
     if not courses:
         await message.answer("Нет доступных курсов")
         return
+
+    await state.update_data(title=title)
+    logger.info("User %s entered title: %r", user_id, title)
 
     kb = add_cancel_inline(courses_kb(courses))
     await send_message_with_kb(
@@ -89,33 +90,41 @@ async def add_topic_course(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     if not callback.data.startswith("course:"):
+        await callback.answer()
         return
 
     await callback.message.edit_reply_markup(reply_markup=None)
 
-    course_id = callback.data.split("course:")[-1]
+    course_id = callback.data.removeprefix("course:")
     await state.update_data(course=course_id)
     await create_topic(callback, state)
     await callback.answer()
 
 
-async def create_topic(target: CallbackQuery, state: FSMContext) -> None:
+async def create_topic(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    token = await require_auth(target)
+    token = await require_auth(callback)
     if not token:
         return
 
     payload = {"title": data["title"], "course": data["course"]}
 
-    status, _ = await post_entity("topics", token, payload)
+    status, errors = await post_entity("topics", token, payload)
 
     if status == 201:
-        await target.message.answer(f"📘 Тема «{data['title']}» успешно создана")
+        await callback.message.answer(f"📘 Тема «{data['title']}» успешно создана")
+    elif status == 400:
+        error_text = format_api_errors(errors)
+
+        await send_message_with_kb(
+            callback,
+            "❌ Не удалось создать задачу:\n\n" + error_text,
+        )
     else:
-        await target.message.answer("❌ Ошибка создания темы")
+        await callback.message.answer("❌ Ошибка создания темы")
 
     await state.clear()
-    await target.answer()
+    await callback.answer()
 
 
 @router.message(Command("topics"))  # type: ignore
