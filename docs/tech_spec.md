@@ -22,7 +22,8 @@
 - aiogram 3.x
 - Docker + docker-compose
 - Redis + Celery
-- OpenAI API
+- drf-spectacular (OpenAPI/Swagger)
+- SimpleJWT
 
 ## 2. Архитектура системы
 
@@ -151,6 +152,13 @@ POST /api/v1/courses/
 GET  /api/v1/courses/
 ```
 
+**Темы:**
+
+```
+POST /api/v1/topics/
+GET  /api/v1/topics/
+```
+
 ## 6. Telegram Bot
 
 ### 6.1 Команды
@@ -161,6 +169,9 @@ GET  /api/v1/courses/
 | /add_task   | Создание задачи  |
 | /tasks      | Список задач     |
 | /add_course | Добавить курс    |
+| /courses    | Список курсов    |
+| /add_topic  | Добавить тему    |
+| /topics     | Список тем       |
 | /help       | Помощь           |
 
 ### 6.2 Inline-кнопки
@@ -182,7 +193,9 @@ GET  /api/v1/courses/
     - backend
     - postgres
     - redis
-    - celery
+    - celery_worker
+    - celery_beat
+    - flower
     - bot
 
 ## 9. Логи и мониторинг
