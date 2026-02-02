@@ -89,11 +89,13 @@ services:
   bot:
     build: .
     container_name: ss_bot
-    command: python -m bot.bot
+    command: sh -c "python -m bot.bot & celery -A bot.celery_app worker -l info -Q ${BOT_QUEUE:-telegram}"
     volumes:
       - .:/app
     env_file:
       - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: ""
     depends_on:
       - backend
       - redis

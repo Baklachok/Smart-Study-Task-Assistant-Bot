@@ -100,3 +100,6 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 60.0,
     },
 }
+
+BOT_SEND_MESSAGE_TASK = os.getenv("BOT_SEND_MESSAGE_TASK", "bot.send_message")
+BOT_QUEUE = os.getenv("BOT_QUEUE", "telegram")

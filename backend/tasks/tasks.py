@@ -1,9 +1,11 @@
 import logging
+
 from celery import shared_task
 from django.utils import timezone
 
+from .formatters import format_task
 from .models import Reminder, Task
-from .telegram import send_telegram_message, _build_task_reminder_text
+from ..notifications.publisher import publish_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +34,10 @@ def send_task_reminders(self: Task) -> None:
             )
             continue
 
-        send_telegram_message(
+        publish_telegram_message(
             telegram_id=user.telegram_id,
             text=_build_task_reminder_text(task),
+            extra={"task_id": str(task.id), "reminder_id": str(reminder.id)},
         )
 
         reminder.sent = True
@@ -44,3 +47,7 @@ def send_task_reminders(self: Task) -> None:
             "Reminder sent",
             extra={"task_id": task.id, "user_id": user.id},
         )
+
+
+def _build_task_reminder_text(task: Task) -> str:
+    return f"⏰ <b>Напоминание о задаче</b>\n\n{format_task(task)}"

@@ -20,7 +20,7 @@ Telegram-бот и REST API для управления задачами, кур
 
 ```
 Telegram → aiogram Bot → Django REST API → PostgreSQL
-                         ↘ Celery + Redis → Telegram API (напоминания)
+                         ↘ Celery + Redis → bot Celery worker → Telegram API (напоминания)
 ```
 
 ---
@@ -69,6 +69,8 @@ CELERY_RESULT_BACKEND=redis://redis:6379/0
 
 TELEGRAM_BOT_TOKEN=PUT_YOUR_TELEGRAM_BOT_TOKEN_HERE
 API_URL=http://backend:8000/api/v1
+BOT_SEND_MESSAGE_TASK=bot.send_message
+BOT_QUEUE=telegram
 ```
 
 Опционально:
