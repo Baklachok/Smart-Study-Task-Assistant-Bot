@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from .formatters import format_task
 from .models import Reminder, Task
-from ..notifications.publisher import publish_telegram_message
+from notifications.publisher import publish_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,9 @@ def send_task_reminders(self: Task) -> None:
     now = timezone.now()
 
     reminders = Reminder.objects.select_related("task", "task__user").filter(
-        sent=False, notify_at__lte=now
+        sent=False,
+        notify_at__lte=now,
+        task__status=Task.Status.PENDING,
     )
 
     for reminder in reminders:
