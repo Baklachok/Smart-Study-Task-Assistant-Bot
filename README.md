@@ -8,9 +8,12 @@ Telegram-бот и REST API для управления задачами, кур
 ## Возможности
 
 - Регистрация пользователей через Telegram
+- Интерактивное меню (inline-кнопки, редактирование одного сообщения)
 - Управление задачами (создание, просмотр, завершение, удаление)
 - Курсы и темы с прогрессом
 - Напоминания о задачах (Celery + Redis)
+- Аналитика привычек (LLM через HuggingFace, опционально)
+- Еженедельная сводка привычек (Celery Beat)
 - JWT-аутентификация
 - Swagger/Redoc документация API
 
@@ -71,6 +74,16 @@ TELEGRAM_BOT_TOKEN=PUT_YOUR_TELEGRAM_BOT_TOKEN_HERE
 API_URL=http://backend:8000/api/v1
 BOT_SEND_MESSAGE_TASK=bot.send_message
 BOT_QUEUE=telegram
+
+# HuggingFace LLM (опционально)
+HUGGINGFACE_ENABLED=true
+HUGGINGFACE_API_TOKEN=YOUR_TOKEN
+HUGGINGFACE_MODEL=YOUR_MODEL_ID
+HUGGINGFACE_API_BASE=https://router.huggingface.co/v1/chat/completions
+HUGGINGFACE_TIMEOUT=8
+HUGGINGFACE_MAX_NEW_TOKENS=240
+HUGGINGFACE_RETRIES=1
+HUGGINGFACE_USE_LLM_WEEKLY=true
 ```
 
 Опционально:
@@ -102,8 +115,10 @@ docker-compose up --build
 ## Команды Telegram-бота
 
 - `/start` — регистрация пользователя
+- `/menu` — открыть меню
 - `/add_task` — создать задачу
 - `/tasks` — список задач (`today` | `week`)
+- `/habits` — аналитика привычек
 - `/add_course` — добавить курс
 - `/courses` — список курсов
 - `/add_topic` — добавить тему

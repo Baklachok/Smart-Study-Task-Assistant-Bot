@@ -6,7 +6,7 @@ from aiogram.types import BotCommand
 
 from bot.commands import COMMANDS
 from bot.config import settings
-from bot.handlers import tasks, courses, help, topics, unknown, start
+from bot.handlers import tasks, courses, help, topics, unknown, start, habits, menu
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -35,7 +35,9 @@ async def main() -> None:
     dp = Dispatcher()
 
     dp.include_router(start.router)
+    dp.include_router(menu.router)
     dp.include_router(tasks.router)
+    dp.include_router(habits.router)
     dp.include_router(courses.router)
     dp.include_router(help.router)
     dp.include_router(topics.router)

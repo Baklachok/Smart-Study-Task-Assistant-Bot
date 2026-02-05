@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from ..config import settings
 from ..utils.auth import user_tokens, get_telegram_id
 from ..utils.http import api_client
+from .menu import _show_menu
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -42,7 +43,6 @@ async def start_handler(message: Message) -> None:
         return
 
     user_tokens[telegram_id] = access_token
-    user = data["user"]
     created = data.get("created", False)
 
     logger.info(
@@ -51,7 +51,4 @@ async def start_handler(message: Message) -> None:
         created,
     )
 
-    await message.answer(
-        f"Привет, {user['first_name']}!\n"
-        f"{'Регистрация завершена ✅' if created else 'С возвращением!'}"
-    )
+    await _show_menu(message)

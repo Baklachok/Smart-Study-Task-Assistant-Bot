@@ -1,9 +1,10 @@
+from datetime import timezone as dt_timezone, datetime
 import logging
 from typing import Any, Optional, cast
 
 from django.utils import timezone
-from datetime import timezone as dt_timezone, datetime
 from rest_framework import serializers
+
 from .models import Task
 from topics.models import Topic
 
@@ -42,8 +43,9 @@ class TaskSerializer(serializers.ModelSerializer):
             "topic",
             "topic_id",
             "created_at",
+            "completed_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "created_at", "completed_at"]
 
     def get_topic(self, obj: Task) -> Optional[dict[str, str]]:
         topic = cast(Optional[Topic], obj.topic)
@@ -56,21 +58,14 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance: Task) -> dict[str, Any]:
         data = cast(dict[str, Any], super().to_representation(instance))
-
-        if instance.due_at:
-            request = self.context.get("request")
-            if request:
-                user = request.user
-                user_tz = get_user_timezone(user)
-                data["due_at"] = instance.due_at.astimezone(user_tz).isoformat()
-
+        data["due_at"] = self._format_due_at(instance)
         return data
 
     def create(self, validated_data: dict[str, Any]) -> Task:
-        topic_id = validated_data.pop("topic_id", None)
+        self._apply_topic_id(validated_data)
 
-        if topic_id is not None:
-            validated_data["topic_id"] = topic_id
+        if validated_data.get("status") == Task.Status.DONE:
+            validated_data.setdefault("completed_at", timezone.now())
 
         task = Task.objects.create(**validated_data)
         return task
@@ -82,6 +77,22 @@ class TaskSerializer(serializers.ModelSerializer):
             setattr(task, "topic_id", topic_id)
             task.save(update_fields=["topic"])
         return task
+
+    def _apply_topic_id(self, validated_data: dict[str, Any]) -> None:
+        topic_id = validated_data.pop("topic_id", None)
+        if topic_id is not None:
+            validated_data["topic_id"] = topic_id
+
+    def _format_due_at(self, instance: Task) -> str | None:
+        if not instance.due_at:
+            return None
+        due_at = cast(datetime, instance.due_at)
+        request = self.context.get("request")
+        if not request:
+            return due_at.isoformat()
+        user = cast(Any, request).user
+        user_tz = get_user_timezone(cast(Any, user))
+        return due_at.astimezone(user_tz).isoformat()
 
     def validate_due_at(self, value: datetime) -> datetime | None:
         if value is None:

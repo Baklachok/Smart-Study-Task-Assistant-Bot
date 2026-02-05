@@ -52,6 +52,9 @@ class Task(models.Model):
     )
 
     created_at: ClassVar[models.DateTimeField] = models.DateTimeField(auto_now_add=True)
+    completed_at: ClassVar[models.DateTimeField] = models.DateTimeField(
+        null=True, blank=True
+    )
 
     class Meta:
         ordering = ["-created_at"]

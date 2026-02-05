@@ -56,6 +56,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active: models.BooleanField = models.BooleanField(default=True)
     is_staff: models.BooleanField = models.BooleanField(default=False)
     created_at: models.DateTimeField = models.DateTimeField(auto_now_add=True)
+    last_habits_report_at: models.DateTimeField = models.DateTimeField(
+        null=True, blank=True
+    )
 
     objects = UserManager()
 

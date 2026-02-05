@@ -1,10 +1,23 @@
 import os
 from pathlib import Path
 
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).lower() == "true"
+
+
+def _env_float(name: str, default: float) -> float:
+    return float(os.getenv(name, str(default)))
+
+
+def _env_int(name: str, default: int) -> int:
+    return int(os.getenv(name, str(default)))
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+DEBUG = _env_bool("DEBUG", False)
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
 DJANGO_APPS = [
@@ -99,7 +112,24 @@ CELERY_BEAT_SCHEDULE = {
         "task": "tasks.tasks.send_task_reminders",
         "schedule": 60.0,
     },
+    "send-habits-reports": {
+        "task": "tasks.tasks.send_weekly_habits_reports",
+        "schedule": 604800.0,
+    },
 }
 
 BOT_SEND_MESSAGE_TASK = os.getenv("BOT_SEND_MESSAGE_TASK", "bot.send_message")
 BOT_QUEUE = os.getenv("BOT_QUEUE", "telegram")
+
+# Hugging Face LLM settings
+HUGGINGFACE_ENABLED = _env_bool("HUGGINGFACE_ENABLED", False)
+HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+HUGGINGFACE_MODEL = os.getenv("HUGGINGFACE_MODEL")
+HUGGINGFACE_API_BASE = os.getenv(
+    "HUGGINGFACE_API_BASE",
+    "https://router.huggingface.co/v1/chat/completions",
+)
+HUGGINGFACE_TIMEOUT = _env_float("HUGGINGFACE_TIMEOUT", 8)
+HUGGINGFACE_MAX_NEW_TOKENS = _env_int("HUGGINGFACE_MAX_NEW_TOKENS", 240)
+HUGGINGFACE_RETRIES = _env_int("HUGGINGFACE_RETRIES", 1)
+HUGGINGFACE_USE_LLM_WEEKLY = _env_bool("HUGGINGFACE_USE_LLM_WEEKLY", True)
