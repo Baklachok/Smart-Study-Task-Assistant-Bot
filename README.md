@@ -59,7 +59,7 @@ cd DjangoProject
 ```env
 SECRET_KEY=django-insecure-change-me
 DEBUG=True
-DJANGO_SETTINGS_MODULE=DjangoProject.settings.base
+DJANGO_SETTINGS_MODULE=DjangoProject.settings
 ALLOWED_HOSTS=localhost,127.0.0.1,backend
 
 POSTGRES_DB=smart_study_db
