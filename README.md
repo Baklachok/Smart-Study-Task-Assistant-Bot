@@ -95,11 +95,19 @@ TIME_ZONE=Europe/Moscow
 
 ### 3. Запуск
 
+Backend-only режим по умолчанию:
+
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-`backend` автоматически выполняет `migrate` при старте.
+Полный стек с Telegram-ботом:
+
+```bash
+docker compose --profile bot up --build
+```
+
+`backend` автоматически выполняет `migrate` при старте. Сервис `bot` вынесен в отдельный profile и не запускается в backend-only режиме.
 
 ---
 
@@ -109,6 +117,8 @@ docker-compose up --build
 - Swagger UI: `http://localhost:8000/api/schema/swagger/`
 - Redoc: `http://localhost:8000/api/schema/redoc/`
 - Flower (Celery): `http://localhost:5555`
+
+В backend-only режиме поднимаются `postgres`, `redis`, `backend`, `celery_worker`, `celery_beat`, `flower`.
 
 ---
 
@@ -150,11 +160,18 @@ python backend/manage.py runserver
 python -m bot.bot
 ```
 
-5. Запуск Celery:
+5. Запуск backend Celery:
 
 ```bash
 celery -A DjangoProject.celery worker -l info
 celery -A DjangoProject.celery beat -l info
+```
+
+6. Запуск Telegram-бота и его Celery worker:
+
+```bash
+celery -A bot.celery_app worker -l info -Q ${BOT_QUEUE:-telegram}
+python -m bot.bot
 ```
 
 ---

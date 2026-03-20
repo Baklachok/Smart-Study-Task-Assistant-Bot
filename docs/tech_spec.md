@@ -25,6 +25,11 @@
 - drf-spectacular (OpenAPI/Swagger)
 - SimpleJWT
 
+### 1.4 Режимы запуска Docker
+
+- `docker compose up --build` — backend-only режим: `postgres`, `redis`, `backend`, `celery_worker`, `celery_beat`, `flower`
+- `docker compose --profile bot up --build` — полный стек, включая `bot`
+
 ## 2. Архитектура системы
 
 ### 2.1 Общая схема
@@ -207,7 +212,7 @@ GET  /api/v1/topics/
     - celery_worker
     - celery_beat
     - flower
-    - bot
+    - bot (optional, profile `bot`)
 
 ## 9. Логи и мониторинг
 

@@ -42,7 +42,7 @@
 ```
 
 - **Telegram (User)**: пользовательский интерфейс
-- **aiogram Bot**: thin client, обработка команд и интерактивного меню, запросы к API
+- **aiogram Bot**: optional runtime; thin client, обработка команд и интерактивного меню, запросы к API
 - **Django REST API**: бизнес-логика и хранение данных (JWT)
 - **PostgreSQL**: основное хранилище данных
 - **Redis + Celery**: планирование напоминаний и регулярных отчётов по привычкам
@@ -97,7 +97,10 @@
 - **celery_worker** — воркер для фоновых задач backend
 - **celery_beat** — планировщик периодических задач
 - **flower** — мониторинг Celery
-- **bot** — aiogram bot + Celery worker для уведомлений
+- **bot** — aiogram bot + Celery worker для уведомлений, запускается через compose profile `bot`
+
+По умолчанию `docker compose up --build` поднимает backend-only стек без `bot`.
+Полный стек запускается через `docker compose --profile bot up --build`.
 
 
 ## 5. Принципы проектирования
