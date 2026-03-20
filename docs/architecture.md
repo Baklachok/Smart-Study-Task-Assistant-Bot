@@ -15,7 +15,7 @@
 ┌─────▼─────────────────────┐
 │ Django REST API           │
 │                           │
-│  Auth (Telegram)          │
+│  Auth (Telegram + Email)  │
 │  Tasks / Courses / Topics │
 │  Reminders                │
 │  Habits analytics (LLM)   │
@@ -43,7 +43,7 @@
 
 - **Telegram (User)**: пользовательский интерфейс
 - **aiogram Bot**: optional runtime; thin client, обработка команд и интерактивного меню, запросы к API
-- **Django REST API**: бизнес-логика и хранение данных (JWT)
+- **Django REST API**: бизнес-логика и хранение данных (JWT, Telegram + email/password auth)
 - **PostgreSQL**: основное хранилище данных
 - **Redis + Celery**: планирование напоминаний и регулярных отчётов по привычкам
 

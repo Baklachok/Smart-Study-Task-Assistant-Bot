@@ -7,7 +7,7 @@ Telegram-бот и REST API для управления задачами, кур
 
 ## Возможности
 
-- Регистрация пользователей через Telegram
+- Авторизация через Telegram и email/password
 - Интерактивное меню (inline-кнопки, редактирование одного сообщения)
 - Управление задачами (создание, просмотр, завершение, удаление)
 - Курсы и темы с прогрессом
@@ -59,6 +59,7 @@ cd DjangoProject
 ```env
 SECRET_KEY=django-insecure-change-me
 DEBUG=True
+DJANGO_SETTINGS_MODULE=DjangoProject.settings.base
 ALLOWED_HOSTS=localhost,127.0.0.1,backend
 
 POSTGRES_DB=smart_study_db
@@ -85,6 +86,8 @@ HUGGINGFACE_MAX_NEW_TOKENS=240
 HUGGINGFACE_RETRIES=1
 HUGGINGFACE_USE_LLM_WEEKLY=true
 ```
+
+`DJANGO_SETTINGS_MODULE` обязателен для корректного запуска backend и Celery.
 
 Опционально:
 
@@ -145,7 +148,7 @@ docker compose --profile bot up --build
 poetry install
 ```
 
-2. Задать переменные окружения (см. блок `.env` выше).
+2. Задать переменные окружения (см. блок `.env` выше). Обязательно укажи `DJANGO_SETTINGS_MODULE=DjangoProject.settings.base`.
 
 3. Запуск backend:
 

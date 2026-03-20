@@ -47,12 +47,13 @@
 
 ## 3. Пользовательские сценарии
 
-### 3.1 Регистрация пользователя
+### 3.1 Регистрация и авторизация пользователя
 
 - Пользователь отправляет `/start`
 - Бот передает данные в API
 - Backend создает пользователя или возвращает существующего
 - Бот открывает интерактивное меню
+- Также пользователь может зарегистрироваться и войти напрямую через `email/password`
 
 ### 3.2 Управление задачами
 
@@ -84,6 +85,8 @@
 |-------------|------------|------------------|
 | id          | UUID       | Идентификатор    |
 | telegram_id | BIGINT     | Telegram ID      |
+| email       | VARCHAR    | Email для login  |
+| email_verified | BOOLEAN | Подтвержден ли email |
 | username    | VARCHAR    | Username         |
 | first_name  | VARCHAR    | Имя              |
 | language    | VARCHAR(5) | Язык             |
@@ -139,6 +142,7 @@
 ### 5.1 Авторизация
 
 - По `telegram_id`
+- По `email/password`
 
 ### 5.2 Эндпоинты
 
@@ -146,6 +150,10 @@
 
 ```
 POST /api/v1/users/telegram-login/
+POST /api/v1/users/register/
+POST /api/v1/users/login/
+POST /api/v1/users/link-email/
+POST /api/v1/users/token/refresh/
 GET  /api/v1/users/me/
 ```
 

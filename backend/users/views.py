@@ -1,92 +1,47 @@
 import logging
 from typing import Any, cast
 
-from drf_spectacular.utils import extend_schema
-from rest_framework import status, permissions
+from rest_framework import permissions, status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView
-from rest_framework_simplejwt.tokens import RefreshToken
 
+from .api.schema import (
+    EMAIL_LOGIN_SCHEMA,
+    EMAIL_REGISTER_SCHEMA,
+    LINK_EMAIL_SCHEMA,
+    ME_SCHEMA,
+    TELEGRAM_LOGIN_SCHEMA,
+    TOKEN_REFRESH_SCHEMA,
+)
 from .models import User
 from .serializers import (
+    EmailLoginSerializer,
+    EmailRegisterSerializer,
+    LinkEmailSerializer,
     TelegramLoginSerializer,
     UserSerializer,
-    TelegramLoginResponseSerializer,
+)
+from .services.auth import (
+    authenticate_email_user,
+    build_auth_response,
+    get_or_create_telegram_user,
+    issue_tokens,
+    link_email_credentials,
+    register_email_user,
+    update_telegram_user,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class TelegramLoginView(APIView):
-    """Создание или обновление пользователя по Telegram ID"""
+    """Создание или обновление пользователя по Telegram ID."""
 
     permission_classes = [permissions.AllowAny]
 
-    @staticmethod
-    def _get_tokens_for_user(user: User) -> dict[str, str]:
-        """Создаёт JWT-токены для пользователя"""
-        refresh = RefreshToken.for_user(user)
-        logger.info(
-            "JWT tokens issued",
-            extra={
-                "user_id": user.id,
-                "email": getattr(user, "email", None),
-                "is_active": user.is_active,
-            },
-        )
-        return {"refresh": str(refresh), "access": str(refresh.access_token)}
-
-    @staticmethod
-    def _build_user_defaults(data: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "username": data.get("username"),
-            "first_name": data.get("first_name", ""),
-            "language": data.get("language", "en"),
-            "timezone": data.get("timezone", "UTC"),
-        }
-
-    @classmethod
-    def _get_or_create_user(cls, data: dict[str, Any]) -> tuple[User, bool]:
-        return cast(
-            tuple[User, bool],
-            User.objects.get_or_create(
-                telegram_id=data["telegram_id"],
-                defaults=cls._build_user_defaults(data),
-            ),
-        )
-
-    @staticmethod
-    def _update_user_fields(user: User, data: dict[str, Any]) -> list[str]:
-        """Обновляет изменившиеся поля пользователя"""
-        updated_fields = []
-        for field in ("username", "first_name", "language", "timezone"):
-            value = data.get(field)
-            if value and getattr(user, field) != value:
-                setattr(user, field, value)
-                updated_fields.append(field)
-
-        if updated_fields:
-            user.save(update_fields=updated_fields)
-            logger.info(
-                "Telegram user updated",
-                extra={
-                    "user_id": user.id,
-                    "telegram_id": user.telegram_id,
-                    "updated_fields": updated_fields,
-                },
-            )
-
-        return updated_fields
-
-    @extend_schema(  # type: ignore
-        request=TelegramLoginSerializer,
-        responses=TelegramLoginResponseSerializer,
-        tags=["Users"],
-        summary="Telegram login",
-        description="Создание или обновление пользователя по Telegram ID",
-    )
+    @TELEGRAM_LOGIN_SCHEMA  # type: ignore[untyped-decorator]
     def post(self, request: Request) -> Response:
         logger.info(
             "Telegram login attempt",
@@ -101,7 +56,7 @@ class TelegramLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        user, created = self._get_or_create_user(data)
+        user, created = get_or_create_telegram_user(data)
 
         if created:
             logger.info(
@@ -109,30 +64,63 @@ class TelegramLoginView(APIView):
                 extra={"user_id": user.id, "telegram_id": user.telegram_id},
             )
         else:
-            self._update_user_fields(user, data)
-
-        tokens = self._get_tokens_for_user(user)
+            update_telegram_user(user, data)
 
         return Response(
             {
                 "user": UserSerializer(user).data,
-                "tokens": tokens,
+                "tokens": issue_tokens(user),
                 "created": created,
             },
             status=status.HTTP_200_OK,
         )
 
 
+class EmailRegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @EMAIL_REGISTER_SCHEMA  # type: ignore[untyped-decorator]
+    def post(self, request: Request) -> Response:
+        serializer = EmailRegisterSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        user = register_email_user(serializer.validated_data)
+
+        return Response(
+            build_auth_response(user),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class EmailLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @EMAIL_LOGIN_SCHEMA  # type: ignore[untyped-decorator]
+    def post(self, request: Request) -> Response:
+        serializer = EmailLoginSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = authenticate_email_user(request, serializer.validated_data)
+        return Response(build_auth_response(user), status=status.HTTP_200_OK)
+
+
+class LinkEmailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @LINK_EMAIL_SCHEMA  # type: ignore[untyped-decorator]
+    def post(self, request: Request) -> Response:
+        user = cast(User, request.user)
+        serializer = LinkEmailSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        linked_user = link_email_credentials(user, serializer.validated_data)
+        return Response(UserSerializer(linked_user).data, status=status.HTTP_200_OK)
+
+
 class MeView(APIView):
-    """Получение текущего пользователя"""
+    """Получение текущего пользователя."""
 
     permission_classes = [permissions.IsAuthenticated]
 
-    @extend_schema(  # type: ignore
-        responses={200: UserSerializer},
-        tags=["Users"],
-        summary="Текущий пользователь",
-    )
+    @ME_SCHEMA  # type: ignore[untyped-decorator]
     def get(self, request: Request) -> Response:
         user = cast(User, request.user)
         logger.debug(
@@ -147,10 +135,6 @@ class MeView(APIView):
 
 
 class UserTokenRefreshView(TokenRefreshView):  # type: ignore[misc]
-    @extend_schema(  # type: ignore
-        tags=["Users"],
-        summary="Обновить access token",
-        description="Обновляет access token по refresh token.",
-    )
+    @TOKEN_REFRESH_SCHEMA  # type: ignore[untyped-decorator]
     def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         return cast(Response, super().post(request, *args, **kwargs))
