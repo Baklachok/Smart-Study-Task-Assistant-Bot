@@ -1,11 +1,12 @@
 import logging
-from typing import cast, Any
+from typing import Any, cast
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, permissions
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import User
@@ -38,7 +39,26 @@ class TelegramLoginView(APIView):
         return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
     @staticmethod
-    def _update_user_fields(user: User, data: Any) -> list[str]:
+    def _build_user_defaults(data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "username": data.get("username"),
+            "first_name": data.get("first_name", ""),
+            "language": data.get("language", "en"),
+            "timezone": data.get("timezone", "UTC"),
+        }
+
+    @classmethod
+    def _get_or_create_user(cls, data: dict[str, Any]) -> tuple[User, bool]:
+        return cast(
+            tuple[User, bool],
+            User.objects.get_or_create(
+                telegram_id=data["telegram_id"],
+                defaults=cls._build_user_defaults(data),
+            ),
+        )
+
+    @staticmethod
+    def _update_user_fields(user: User, data: dict[str, Any]) -> list[str]:
         """Обновляет изменившиеся поля пользователя"""
         updated_fields = []
         for field in ("username", "first_name", "language", "timezone"):
@@ -81,15 +101,7 @@ class TelegramLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        user, created = User.objects.get_or_create(
-            telegram_id=data["telegram_id"],
-            defaults={
-                "username": data.get("username"),
-                "first_name": data.get("first_name", ""),
-                "language": data.get("language", "en"),
-                "timezone": data.get("timezone", "UTC"),
-            },
-        )
+        user, created = self._get_or_create_user(data)
 
         if created:
             logger.info(
@@ -132,3 +144,13 @@ class MeView(APIView):
             UserSerializer(user).data,
             status=status.HTTP_200_OK,
         )
+
+
+class UserTokenRefreshView(TokenRefreshView):  # type: ignore[misc]
+    @extend_schema(  # type: ignore
+        tags=["Users"],
+        summary="Обновить access token",
+        description="Обновляет access token по refresh token.",
+    )
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return cast(Response, super().post(request, *args, **kwargs))

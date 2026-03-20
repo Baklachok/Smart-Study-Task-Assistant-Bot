@@ -8,6 +8,7 @@ from rest_framework import serializers
 from .models import Task
 from topics.models import Topic
 
+from users.models import User
 from users.utils.timezone import get_user_timezone
 
 logger = logging.getLogger(__name__)
@@ -67,8 +68,7 @@ class TaskSerializer(serializers.ModelSerializer):
         if validated_data.get("status") == Task.Status.DONE:
             validated_data.setdefault("completed_at", timezone.now())
 
-        task = Task.objects.create(**validated_data)
-        return task
+        return Task.objects.create(**validated_data)
 
     def update(self, instance: Task, validated_data: dict[str, Any]) -> Task:
         topic_id: Optional[str] = validated_data.pop("topic_id", None)
@@ -83,31 +83,35 @@ class TaskSerializer(serializers.ModelSerializer):
         if topic_id is not None:
             validated_data["topic_id"] = topic_id
 
+    def _get_context_user(self) -> User | None:
+        request = self.context.get("request")
+        if not request:
+            return None
+        return cast(User, cast(Any, request).user)
+
     def _format_due_at(self, instance: Task) -> str | None:
         if not instance.due_at:
             return None
+
         due_at = cast(datetime, instance.due_at)
-        request = self.context.get("request")
-        if not request:
+        user = self._get_context_user()
+        if not user:
             return due_at.isoformat()
-        user = cast(Any, request).user
-        user_tz = get_user_timezone(cast(Any, user))
-        return due_at.astimezone(user_tz).isoformat()
 
-    def validate_due_at(self, value: datetime) -> datetime | None:
-        if value is None:
-            return None
+        return due_at.astimezone(get_user_timezone(user)).isoformat()
 
-        request = self.context["request"]
-        user = request.user
-
+    @staticmethod
+    def _normalize_due_at(value: datetime, user: User) -> datetime:
         user_tz = get_user_timezone(user)
-
         if timezone.is_naive(value):
-            value = user_tz.localize(value)
+            return cast(datetime, user_tz.localize(value))
+        return value
 
-        value_utc = value.astimezone(dt_timezone.utc)
+    def _require_context_user(self) -> User:
+        return cast(User, self._get_context_user())
 
+    @staticmethod
+    def _validate_due_at_not_in_past(value_utc: datetime, user: User) -> None:
         now_utc = timezone.now()
         if value_utc < now_utc:
             logger.warning(
@@ -120,4 +124,19 @@ class TaskSerializer(serializers.ModelSerializer):
             )
             raise serializers.ValidationError("Нельзя установить дедлайн в прошлом.")
 
+    def validate_due_at(self, value: datetime) -> datetime | None:
+        if value is None:
+            return None
+
+        user = self._require_context_user()
+        normalized_value = self._normalize_due_at(value, user)
+        value_utc = normalized_value.astimezone(dt_timezone.utc)
+        self._validate_due_at_not_in_past(value_utc, user)
+
         return value_utc
+
+
+class HabitsReportSerializer(serializers.Serializer):
+    short_text = serializers.CharField()
+    long_text = serializers.CharField()
+    metrics = serializers.JSONField()

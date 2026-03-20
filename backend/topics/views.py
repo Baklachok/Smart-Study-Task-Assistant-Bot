@@ -13,8 +13,11 @@ from .serializers import TopicSerializer
 class TopicListCreateView(generics.ListCreateAPIView):
     serializer_class = TopicSerializer
     permission_classes = [permissions.IsAuthenticated]
+    queryset = Topic.objects.none()
 
     def get_queryset(self) -> QuerySet[Any]:
+        if getattr(self, "swagger_fake_view", False):
+            return Topic.objects.none()
         queryset = Topic.objects.filter(course__user=self.request.user)
 
         course_id = self.request.query_params.get("course")

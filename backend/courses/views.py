@@ -17,8 +17,11 @@ logger = logging.getLogger(__name__)
 class CourseListCreateView(generics.ListCreateAPIView):
     serializer_class = CourseSerializer
     permission_classes = [permissions.IsAuthenticated]
+    queryset = Course.objects.none()
 
     def get_queryset(self) -> QuerySet[Any]:
+        if getattr(self, "swagger_fake_view", False):
+            return Course.objects.none()
         user = cast(User, self.request.user)
         logger.debug(
             "List courses",

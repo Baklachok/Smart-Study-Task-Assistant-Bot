@@ -1,11 +1,11 @@
 from datetime import datetime
+from typing import cast
 
 from django.utils import timezone
 
-from typing import cast
-
 from topics.models import Topic
-from .models import Task
+
+from ..models import Task
 
 PRIORITY_EMOJI: dict[str, str] = {
     "low": "🟢 low",
